@@ -1,0 +1,101 @@
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform.lock.hcl
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Credenciales y Secretos
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.pfx
+*credentials*
+*secrets*
+*.env
+env.config
+.docker-credentials/
+kubeconfig*
+
+# Jenkins
+jenkins_home/
+.jenkins/
+jenkins/jobs/*/builds/
+jenkins/jobs/*/lastStable
+jenkins/jobs/*/lastSuccessful
+jenkins/secrets/
+
+# Kubernetes
+*.kubeconfig
+*-kubeconfig.yaml
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+*.gz
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Backup
+*.bak
+*.backup
+*.old
+
+# Temporal
+tmp/
+temp/
+.tmp/
+
+# Sistema Operativo
+Thumbs.db
+.DS_Store
+._*
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# Gradle
+.gradle/
+build/
+
+# Node (si se usa)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Python (si se usa)
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+ENV/
+
+# Minikube
+.minikube/

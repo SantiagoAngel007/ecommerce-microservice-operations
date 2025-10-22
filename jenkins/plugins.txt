@@ -1,0 +1,11 @@
+# Jenkins Plugins Mínimos para Jenkins 2.479.1-lts-jdk17
+# Solo lo necesario para CI/CD con Kubernetes
+
+git:5.3.2
+docker-workflow:580.v87c7fc1639ac
+kubernetes:1.34.1
+kubernetes-cli:1.15.0
+maven-plugin:3.24
+pipeline-aggregator:596.v8c21c963d92d
+credentials:1336.v1e07e7c4f1d2
+junit:1290.v2163efab_a_d1
