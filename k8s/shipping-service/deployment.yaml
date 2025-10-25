@@ -35,19 +35,19 @@ spec:
           resources:
             requests:
               memory: "256Mi"
-              cpu: "1m"
+              cpu: "100m"
             limits:
               memory: "512Mi"
-              cpu: "25m"
+              cpu: "250m"
           livenessProbe:
             httpGet:
               path: /actuator/health
-              port: 86
+              port: 8600
             initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /actuator/health
-              port: 86
+              port: 8600
             initialDelaySeconds: 20
             periodSeconds: 5
