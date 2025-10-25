@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+  namespace: stage
+  labels:
+    app: product-service
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: product-service
+  template:
+    metadata:
+      labels:
+        app: product-service
+        version: v1
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-credentials
+      containers:
+      - name: product-service
+        image: merako34/product-service:0.1.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8500
+          name: http
+          protocol: TCP
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "stage"
+        - name: SPRING_APPLICATION_NAME
+          value: "PRODUCT-SERVICE"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
