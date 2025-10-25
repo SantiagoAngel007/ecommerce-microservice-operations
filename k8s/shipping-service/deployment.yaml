@@ -24,7 +24,7 @@ spec:
           image: merako34/shipping-service:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 86
+            - containerPort: 8600
               name: http
               protocol: TCP
           env:

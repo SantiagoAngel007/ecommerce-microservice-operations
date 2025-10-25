@@ -8,7 +8,7 @@ metadata:
 data:
   application-dev.yml: |
     server:
-      port: 84
+      port: 8400
       servlet:
         context-path: /payment-service
     management:

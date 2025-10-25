@@ -24,7 +24,7 @@ spec:
           image: merako34/payment-service:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 84
+            - containerPort: 8400
               name: http
               protocol: TCP
           env:

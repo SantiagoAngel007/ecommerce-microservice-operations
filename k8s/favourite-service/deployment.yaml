@@ -24,7 +24,7 @@ spec:
           image: merako34/favourite-service:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 88
+            - containerPort: 8800
               name: http
               protocol: TCP
           env:
