@@ -11,6 +11,9 @@ data:
       port: 8400
       servlet:
         context-path: /payment-service
+    eureka:
+      client:
+        enabled: false
     management:
       endpoints:
         web:

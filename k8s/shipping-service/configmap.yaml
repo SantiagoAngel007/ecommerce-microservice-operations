@@ -11,6 +11,9 @@ data:
       port: 8600
       servlet:
         context-path: /shipping-service
+    eureka:
+      client:
+        enabled: false
     management:
       endpoints:
         web:

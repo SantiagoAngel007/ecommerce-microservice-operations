@@ -11,7 +11,9 @@ data:
       port: 8500
       servlet:
         context-path: /product-service
-    
+    eureka:
+      client:
+        enabled: false
     management:
       endpoints:
         web:

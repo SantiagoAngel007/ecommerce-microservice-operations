@@ -11,7 +11,9 @@ data:
       port: 8300
       servlet:
         context-path: /order-service
-    
+    eureka:
+      client:
+        enabled: false
     management:
       endpoints:
         web:

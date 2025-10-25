@@ -11,6 +11,9 @@ data:
       port: 8800
       servlet:
         context-path: /favourite-service
+    eureka:
+      client:
+        enabled: false
     management:
       endpoints:
         web:
