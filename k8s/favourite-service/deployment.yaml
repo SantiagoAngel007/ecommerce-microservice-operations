@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: favourite-service
+  namespace: dev
+  labels:
+    app: favourite-service
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: favourite-service
+  template:
+    metadata:
+      labels:
+        app: favourite-service
+        version: v1
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-credentials
+      containers:
+        - name: favourite-service
+          image: merako34/favourite-service:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 88
+              name: http
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "dev"
+            - name: SPRING_APPLICATION_NAME
+              value: "FAVOURITE-SERVICE"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "1m"
+            limits:
+              memory: "512Mi"
+              cpu: "25m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 88
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 88
+            initialDelaySeconds: 20
+            periodSeconds: 5

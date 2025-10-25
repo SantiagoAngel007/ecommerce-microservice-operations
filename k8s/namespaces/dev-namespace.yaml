@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+  labels:
+    environment: development
+    managed-by: kubernetes-manifests
+    project: ecommerce-microservices
+  annotations:
+    description: "Development environment for ecommerce microservices"
