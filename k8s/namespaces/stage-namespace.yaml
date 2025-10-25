@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stage
+  labels:
+    environment: staging
+    managed-by: kubernetes-manifests
+    project: ecommerce-microservices
+  annotations:
+    description: "Staging environment for ecommerce microservices - Pre-production testing"

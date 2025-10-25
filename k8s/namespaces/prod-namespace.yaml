@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
+  labels:
+    environment: production
+    managed-by: kubernetes-manifests
+    project: ecommerce-microservices
+  annotations:
+    description: "Production environment for ecommerce microservices - Live system"

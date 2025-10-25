@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: dev
+  labels:
+    app: payment-service
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+        version: v1
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-credentials
+      containers:
+        - name: payment-service
+          image: merako34/payment-service:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 84
+              name: http
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "dev"
+            - name: SPRING_APPLICATION_NAME
+              value: "PAYMENT-SERVICE"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "1m"
+            limits:
+              memory: "512Mi"
+              cpu: "25m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 84
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 84
+            initialDelaySeconds: 20
+            periodSeconds: 5
