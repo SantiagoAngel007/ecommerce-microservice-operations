@@ -11,6 +11,6 @@ spec:
     app: favourite-service
   ports:
     - name: http
-      port: 88
-      targetPort: 88
+      port: 8800
+      targetPort: 8800
       protocol: TCP

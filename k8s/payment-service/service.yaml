@@ -11,7 +11,7 @@ spec:
     app: payment-service
   ports:
     - name: http
-      port: 84
-      targetPort: 84
+      port: 8400
+      targetPort: 8400
       protocol: TCP
 

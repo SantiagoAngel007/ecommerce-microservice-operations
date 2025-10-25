@@ -11,6 +11,6 @@ spec:
     app: shipping-service
   ports:
     - name: http
-      port: 86
-      targetPort: 86
+      port: 8600
+      targetPort: 8600
       protocol: TCP
