@@ -1,0 +1,17 @@
+# proxy-client-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxy-client
+  namespace: dev
+  labels:
+    app: proxy-client
+spec:
+  type: ClusterIP
+  selector:
+    app: proxy-client
+  ports:
+  - name: http
+    port: 8200
+    targetPort: 8200
+    protocol: TCP

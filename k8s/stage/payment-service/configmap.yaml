@@ -1,8 +1,9 @@
+# payment-service-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: payment-service-config
-  namespace: stage
+  namespace: dev
   labels:
     app: payment-service
 data:
@@ -11,25 +12,18 @@ data:
       port: 8400
       servlet:
         context-path: /payment-service
-    eureka:
-      client:
-        enabled: false
-    management:
-      endpoints:
-        web:
-          exposure:
-            include: "*"
-      health:
-        circuitbreakers:
-          enabled: true
-      endpoint:
-        health:
-          show-details: always
+    
     spring:
+      application:
+        name: PAYMENT-SERVICE
+      profiles:
+        active: dev
+      config:
+        import: optional:configserver:http://localhost:9296
       datasource:
         url: jdbc:h2:mem:ecommerce_dev_db;DB_CLOSE_ON_EXIT=FALSE
         username: sa
-        password:
+        password: 
       jpa:
         show-sql: true
         hibernate:
@@ -45,13 +39,20 @@ data:
           path: /h2-console
       zipkin:
         base-url: http://localhost:9411/
-      config:
-        import: optional:configserver:http://localhost:9296
-      application:
-        name: PAYMENT-SERVICE
-      profiles:
-        active:
-          - dev
+    
+    eureka:
+      client:
+        enabled: false
+    
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "*"
+      endpoint:
+        health:
+          show-details: always
+    
     resilience4j:
       circuitbreaker:
         instances:
@@ -65,6 +66,7 @@ data:
             sliding-window-size: 10
             wait-duration-in-open-state: 5s
             sliding-window-type: COUNT_BASED
+    
     logging:
       level:
         org:

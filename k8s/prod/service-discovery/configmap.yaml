@@ -1,0 +1,63 @@
+# service-discovery-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-discovery-config
+  namespace: dev
+  labels:
+    app: service-discovery
+data:
+  application-dev.yml: |
+    server:
+      port: 8761
+    
+    spring:
+      application:
+        name: SERVICE-DISCOVERY
+      profiles:
+        active: dev
+      zipkin:
+        base-url: http://localhost:9411/
+    
+    eureka:
+      instance:
+        hostname: service-discovery
+      server:
+        enable-self-preservation: false
+        eviction-interval-timer-in-ms: 4000
+      client:
+        registerWithEureka: false
+        fetchRegistry: false
+        serviceUrl:
+          defaultZone: http://service-discovery:8761/eureka/
+    
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "*"
+      endpoint:
+        health:
+          show-details: always
+    
+    resilience4j:
+      circuitbreaker:
+        instances:
+          serviceDiscovery:
+            register-health-indicator: true
+            event-consumer-buffer-size: 10
+            automatic-transition-from-open-to-half-open-enabled: true
+            failure-rate-threshold: 50
+            minimum-number-of-calls: 5
+            permitted-number-of-calls-in-half-open-state: 3
+            sliding-window-size: 10
+            wait-duration-in-open-state: 5s
+            sliding-window-type: COUNT_BASED
+    
+    logging:
+      level:
+        org:
+          springframework:
+            web: DEBUG
+          boot:
+            autoconfigure: DEBUG

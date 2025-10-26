@@ -1,0 +1,66 @@
+# proxy-client-deployment.yaml (CORREGIDO)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxy-client
+  namespace: dev
+  labels:
+    app: proxy-client
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: proxy-client
+  template:
+    metadata:
+      labels:
+        app: proxy-client
+        version: v1
+    spec:
+      containers:
+      - name: proxy-client
+        image: merako34/proxy-client:0.1.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8200
+          name: http
+          protocol: TCP
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "dev"
+        - name: SPRING_APPLICATION_NAME
+          value: "PROXY-CLIENT"
+        - name: SPRING_CONFIG_LOCATION
+          value: "file:/config/application-dev.yml"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8200
+          initialDelaySeconds: 3600
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8200
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: proxy-client-config

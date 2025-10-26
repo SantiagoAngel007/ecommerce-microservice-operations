@@ -1,8 +1,9 @@
+# payment-service-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: payment-service
-  namespace: prod
+  namespace: dev
   labels:
     app: payment-service
     version: v1
@@ -17,25 +18,49 @@ spec:
         app: payment-service
         version: v1
     spec:
-      imagePullSecrets:
-        - name: dockerhub-credentials
       containers:
-        - name: payment-service
-          image: merako34/payment-service:0.1.0
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 8400
-              name: http
-              protocol: TCP
-          env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: "prod"
-            - name: SPRING_APPLICATION_NAME
-              value: "PAYMENT-SERVICE"
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
-              memory: "512Mi"
-              cpu: "250m"
+      - name: payment-service
+        image: merako34/payment-service:0.1.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8400
+          name: http
+          protocol: TCP
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "dev"
+        - name: SPRING_APPLICATION_NAME
+          value: "PAYMENT-SERVICE"
+        - name: SPRING_CONFIG_LOCATION
+          value: "file:/config/application-dev.yml"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8400
+          initialDelaySeconds: 3600
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /payment-service/actuator/health
+            port: 8400
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: payment-service-config

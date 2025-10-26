@@ -1,8 +1,9 @@
+# product-service-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: product-service
-  namespace: stage
+  namespace: dev
   labels:
     app: product-service
     version: v1
@@ -17,8 +18,6 @@ spec:
         app: product-service
         version: v1
     spec:
-      imagePullSecrets:
-        - name: dockerhub-credentials
       containers:
       - name: product-service
         image: merako34/product-service:0.1.0
@@ -29,9 +28,11 @@ spec:
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
-          value: "stage"
+          value: "dev"
         - name: SPRING_APPLICATION_NAME
           value: "PRODUCT-SERVICE"
+        - name: SPRING_CONFIG_LOCATION
+          value: "file:/config/application-dev.yml"
         resources:
           requests:
             memory: "256Mi"
@@ -39,3 +40,27 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8500
+          initialDelaySeconds: 3600
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /product-service/actuator/health
+            port: 8500
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: product-service-config

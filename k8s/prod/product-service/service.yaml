@@ -1,8 +1,9 @@
+# product-service-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: product-service-svc
-  namespace: prod
+  name: product-service
+  namespace: dev
   labels:
     app: product-service
 spec:

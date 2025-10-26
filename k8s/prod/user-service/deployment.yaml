@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: user-service
-  namespace: prod
+  namespace: dev
   labels:
     app: user-service
     version: v1
@@ -17,8 +17,6 @@ spec:
         app: user-service
         version: v1
     spec:
-      imagePullSecrets:
-        - name: dockerhub-credentials
       containers:
       - name: user-service
         image: merako34/user-service:0.1.0
@@ -29,9 +27,11 @@ spec:
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
-          value: "prod"
+          value: "dev"
         - name: SPRING_APPLICATION_NAME
           value: "USER-SERVICE"
+        - name: SPRING_CONFIG_LOCATION
+          value: "file:/config/application-dev.yml"
         resources:
           requests:
             memory: "256Mi"
@@ -39,3 +39,27 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8700
+          initialDelaySeconds: 3600
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /user-service/actuator/health
+            port: 8700
+          initialDelaySeconds: 60
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: user-service-config
