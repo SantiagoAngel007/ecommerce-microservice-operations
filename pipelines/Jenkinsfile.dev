@@ -54,7 +54,9 @@ pipeline {
                         'payment-service'
                     ]
                     
-                    echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
+                    sh '''
+                        echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
+                    '''
                     
                     def allImagesExist = true
                     services.each { service ->
