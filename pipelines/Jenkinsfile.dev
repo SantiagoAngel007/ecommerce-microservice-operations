@@ -169,7 +169,7 @@ pipeline {
             }
         }
 
-        stage('Check Kubernetes') {
+        stage('8. Check Kubernetes') {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
@@ -185,21 +185,17 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                    NAMESPACE=${ENVIRONMENT}
-                    
-                    # Crear namespace si no existe
-                    kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-                    
-                    # Aplicar manifests desde repo de operaciones
-                    kubectl apply -f ops/k8s/${NAMESPACE}/service-discovery/ -n ${NAMESPACE}
-                    kubectl apply -f ops/k8s/${NAMESPACE}/proxy-client/ -n ${NAMESPACE}
-                    kubectl apply -f ops/k8s/${NAMESPACE}/user-service/ -n ${NAMESPACE}
-                    kubectl apply -f ops/k8s/${NAMESPACE}/product-service/ -n ${NAMESPACE}
-                    kubectl apply -f ops/k8s/${NAMESPACE}/order-service/ -n ${NAMESPACE}
-                    kubectl apply -f ops/k8s/${NAMESPACE}/payment-service/ -n ${NAMESPACE}
-                    
-                    echo "✓ Deployment completado"
-                '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        NAMESPACE=${ENVIRONMENT}
+                        
+                        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                        kubectl apply -f ops/k8s/${NAMESPACE}/service-discovery/ -n ${NAMESPACE}
+                        kubectl apply -f ops/k8s/${NAMESPACE}/proxy-client/ -n ${NAMESPACE}
+                        kubectl apply -f ops/k8s/${NAMESPACE}/user-service/ -n ${NAMESPACE}
+                        kubectl apply -f ops/k8s/${NAMESPACE}/product-service/ -n ${NAMESPACE}
+                        kubectl apply -f ops/k8s/${NAMESPACE}/order-service/ -n ${NAMESPACE}
+                        kubectl apply -f ops/k8s/${NAMESPACE}/payment-service/ -n ${NAMESPACE}
+                    '''
                 }
             }
         }
