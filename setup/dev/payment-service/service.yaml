@@ -1,8 +1,7 @@
-# payment-service-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: payment-service
+  name: payment-service-svc
   namespace: dev
   labels:
     app: payment-service
@@ -11,7 +10,8 @@ spec:
   selector:
     app: payment-service
   ports:
-  - name: http
-    port: 8400
-    targetPort: 8400
-    protocol: TCP
+    - name: http
+      port: 8400
+      targetPort: 8400
+      protocol: TCP
+

@@ -1,17 +1,17 @@
-# product-service-service.yaml
+# proxy-client-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: product-service
+  name: proxy-client
   namespace: dev
   labels:
-    app: product-service
+    app: proxy-client
 spec:
   type: ClusterIP
   selector:
-    app: product-service
+    app: proxy-client
   ports:
   - name: http
-    port: 8500
-    targetPort: 8500
+    port: 8200
+    targetPort: 8200
     protocol: TCP

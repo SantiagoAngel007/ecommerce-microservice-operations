@@ -1,7 +1,8 @@
+# order-service-service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: order-service-svc
+  name: order-service
   namespace: dev
   labels:
     app: order-service

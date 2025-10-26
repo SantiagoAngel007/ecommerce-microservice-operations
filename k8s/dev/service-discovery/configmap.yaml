@@ -1,46 +1,35 @@
-# order-service-configmap.yaml
+# service-discovery-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: order-service-config
+  name: service-discovery-config
   namespace: dev
   labels:
-    app: order-service
+    app: service-discovery
 data:
   application-dev.yml: |
     server:
-      port: 8300
-      servlet:
-        context-path: /order-service
+      port: 8761
     
     spring:
       application:
-        name: ORDER-SERVICE
+        name: SERVICE-DISCOVERY
       profiles:
         active: dev
-      datasource:
-        url: jdbc:h2:mem:ecommerce_dev_db;DB_CLOSE_ON_EXIT=FALSE
-        username: sa
-        password: 
-      jpa:
-        show-sql: true
-        hibernate:
-          ddl-auto: validate
-        properties:
-          hibernate:
-            dialect: org.hibernate.dialect.H2Dialect
-            use_sql_comments: true
-            format_sql: true
-      h2:
-        console:
-          enabled: true
-          path: /h2-console
       zipkin:
         base-url: http://localhost:9411/
     
     eureka:
+      instance:
+        hostname: service-discovery
+      server:
+        enable-self-preservation: false
+        eviction-interval-timer-in-ms: 4000
       client:
-        enabled: false
+        registerWithEureka: false
+        fetchRegistry: false
+        serviceUrl:
+          defaultZone: http://service-discovery:8761/eureka/
     
     management:
       endpoints:
@@ -54,7 +43,7 @@ data:
     resilience4j:
       circuitbreaker:
         instances:
-          orderService:
+          serviceDiscovery:
             register-health-indicator: true
             event-consumer-buffer-size: 10
             automatic-transition-from-open-to-half-open-enabled: true
@@ -68,14 +57,7 @@ data:
     logging:
       level:
         org:
-          hibernate:
-            SQL: DEBUG
           springframework:
             web: DEBUG
-            data: DEBUG
           boot:
-            autoconfigure:
-              data:
-                rest: DEBUG
-                jpa: DEBUG
-                orm: DEBUG
+            autoconfigure: DEBUG

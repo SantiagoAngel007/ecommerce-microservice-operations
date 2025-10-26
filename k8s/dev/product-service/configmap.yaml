@@ -1,3 +1,4 @@
+# product-service-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -11,16 +12,12 @@ data:
       port: 8500
       servlet:
         context-path: /product-service
-    eureka:
-      client:
-        enabled: false
-    management:
-      endpoints:
-        web:
-          exposure:
-            include: "*"
     
     spring:
+      application:
+        name: PRODUCT-SERVICE
+      profiles:
+        active: dev
       datasource:
         url: jdbc:h2:mem:ecommerce_dev_db;DB_CLOSE_ON_EXIT=FALSE
         username: sa
@@ -40,13 +37,19 @@ data:
           path: /h2-console
       zipkin:
         base-url: http://localhost:9411/
-      config:
-        import: optional:configserver:http://localhost:9296
-      application:
-        name: PRODUCT-SERVICE
-      profiles:
-        active:
-        - dev
+    
+    eureka:
+      client:
+        enabled: false
+    
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "*"
+      endpoint:
+        health:
+          show-details: always
     
     resilience4j:
       circuitbreaker:

@@ -1,46 +1,32 @@
-# order-service-configmap.yaml
+# proxy-client-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: order-service-config
+  name: proxy-client-config
   namespace: dev
   labels:
-    app: order-service
+    app: proxy-client
 data:
   application-dev.yml: |
     server:
-      port: 8300
+      port: 8200
       servlet:
-        context-path: /order-service
+        context-path: /
     
     spring:
       application:
-        name: ORDER-SERVICE
+        name: PROXY-CLIENT
       profiles:
         active: dev
-      datasource:
-        url: jdbc:h2:mem:ecommerce_dev_db;DB_CLOSE_ON_EXIT=FALSE
-        username: sa
-        password: 
-      jpa:
-        show-sql: true
-        hibernate:
-          ddl-auto: validate
-        properties:
-          hibernate:
-            dialect: org.hibernate.dialect.H2Dialect
-            use_sql_comments: true
-            format_sql: true
-      h2:
-        console:
-          enabled: true
-          path: /h2-console
       zipkin:
         base-url: http://localhost:9411/
+      config:
+        import: optional:configserver:http://localhost:9296
     
     eureka:
       client:
         enabled: false
+
     
     management:
       endpoints:
@@ -54,7 +40,7 @@ data:
     resilience4j:
       circuitbreaker:
         instances:
-          orderService:
+          proxyClient:
             register-health-indicator: true
             event-consumer-buffer-size: 10
             automatic-transition-from-open-to-half-open-enabled: true
@@ -68,14 +54,9 @@ data:
     logging:
       level:
         org:
-          hibernate:
-            SQL: DEBUG
           springframework:
             web: DEBUG
-            data: DEBUG
+            cloud:
+              openfeign: DEBUG
           boot:
-            autoconfigure:
-              data:
-                rest: DEBUG
-                jpa: DEBUG
-                orm: DEBUG
+            autoconfigure: DEBUG

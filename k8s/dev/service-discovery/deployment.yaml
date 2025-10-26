@@ -1,38 +1,36 @@
-# product-service-deployment.yaml
+# service-discovery-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: product-service
+  name: service-discovery
   namespace: dev
   labels:
-    app: product-service
+    app: service-discovery
     version: v1
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: product-service
+      app: service-discovery
   template:
     metadata:
       labels:
-        app: product-service
+        app: service-discovery
         version: v1
     spec:
       containers:
-      - name: product-service
-        image: merako34/product-service:0.1.0
+      - name: service-discovery
+        image: merako34/service-discovery:0.1.0
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 8500
+        - containerPort: 8761
           name: http
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
           value: "dev"
         - name: SPRING_APPLICATION_NAME
-          value: "PRODUCT-SERVICE"
-        - name: SPRING_CONFIG_LOCATION
-          value: "file:/config/application-dev.yml"
+          value: "SERVICE-DISCOVERY"
         resources:
           requests:
             memory: "256Mi"
@@ -43,7 +41,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /actuator/health
-            port: 8500
+            port: 8761
           initialDelaySeconds: 3600
           periodSeconds: 10
           timeoutSeconds: 5
@@ -51,7 +49,7 @@ spec:
         readinessProbe:
           httpGet:
             path: /actuator/health
-            port: 8500
+            port: 8761
           initialDelaySeconds: 20
           periodSeconds: 5
           timeoutSeconds: 3
@@ -63,4 +61,4 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: product-service-config
+          name: service-discovery-config

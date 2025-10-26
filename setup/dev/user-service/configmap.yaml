@@ -1,23 +1,26 @@
-# order-service-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: order-service-config
+  name: user-service-config
   namespace: dev
   labels:
-    app: order-service
+    app: user-service
 data:
   application-dev.yml: |
     server:
-      port: 8300
+      port: 8700
       servlet:
-        context-path: /order-service
+        context-path: /user-service
+    eureka:
+      client:
+        enabled: false
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "*"
     
     spring:
-      application:
-        name: ORDER-SERVICE
-      profiles:
-        active: dev
       datasource:
         url: jdbc:h2:mem:ecommerce_dev_db;DB_CLOSE_ON_EXIT=FALSE
         username: sa
@@ -37,24 +40,18 @@ data:
           path: /h2-console
       zipkin:
         base-url: http://localhost:9411/
-    
-    eureka:
-      client:
-        enabled: false
-    
-    management:
-      endpoints:
-        web:
-          exposure:
-            include: "*"
-      endpoint:
-        health:
-          show-details: always
+      config:
+        import: optional:configserver:http://localhost:9296
+      application:
+        name: USER-SERVICE
+      profiles:
+        active:
+        - dev
     
     resilience4j:
       circuitbreaker:
         instances:
-          orderService:
+          userService:
             register-health-indicator: true
             event-consumer-buffer-size: 10
             automatic-transition-from-open-to-half-open-enabled: true
