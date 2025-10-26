@@ -171,8 +171,8 @@ pipeline {
         
         stage('8. Deploy to Kubernetes') {
             steps {
-                echo "☸️  Desplegando en ${ENVIRONMENT}..."
-                sh '''
+                withCredentials([file(credentialsId: 'kubernetes-config', variable: 'KUBECONFIG')]) {
+                    sh '''
                     NAMESPACE=${ENVIRONMENT}
                     
                     # Crear namespace si no existe
