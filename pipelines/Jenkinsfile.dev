@@ -202,14 +202,16 @@ pipeline {
         
         stage('10. Verify Deployment') {
             steps {
-                echo "✅ Verificando pods..."
-                sh '''
-                    NAMESPACE=${ENVIRONMENT}
-                    sleep 30
-                    
-                    echo "Estado de pods:"
-                    kubectl get pods -n ${NAMESPACE}
-                '''
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        NAMESPACE=${ENVIRONMENT}
+                        sleep 30
+                        
+                        echo "Estado de pods:"
+                        kubectl get pods -n ${NAMESPACE}
+                    '''
+                }
             }
         }
     }
