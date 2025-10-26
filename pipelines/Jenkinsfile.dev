@@ -5,10 +5,10 @@ pipeline {
     environment {
         DOCKER_REGISTRY = "docker.io"
         DOCKER_USERNAME = "merako34"
-        DOCKER_PASSWORD = credentials('dockerhub-credentials')
+        DOCKER_PASSWORD = credentials('docker-hub-password')
         GITHUB_REPO_CODE = "https://github.com/SantiagoAngel007/ecommerce-microservice-backend-app.git"
         GITHUB_REPO_OPS = "https://github.com/SantiagoAngel007/ecommerce-microservice-operations.git"
-        GITHUB_BRANCH_CODE = "master"        // ← para backend-app
+        GITHUB_BRANCH_CODE = "master"
         GITHUB_BRANCH_OPS = "main"  
         DOCKER_TAG = "0.1.0"
     }
