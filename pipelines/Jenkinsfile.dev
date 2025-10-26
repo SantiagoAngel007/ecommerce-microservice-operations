@@ -171,11 +171,13 @@ pipeline {
 
         stage('Check Kubernetes') {
             steps {
-                echo "🔍 Verificando que Kubernetes esté corriendo..."
-                sh '''
-                    kubectl cluster-info
-                    kubectl get nodes
-                '''
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        kubectl cluster-info
+                        kubectl get nodes
+                    '''
+                }
             }
         }
         
