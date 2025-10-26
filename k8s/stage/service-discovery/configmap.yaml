@@ -7,7 +7,7 @@ metadata:
   labels:
     app: service-discovery
 data:
-  application-dev.yml: |
+  application-stage.yml: |
     server:
       port: 8761
     

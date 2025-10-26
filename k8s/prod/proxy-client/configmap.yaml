@@ -1,13 +1,13 @@
-# proxy-client-configmap.yaml
+# proxy-client-configmap.yaml (PROD)
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: proxy-client-config
-  namespace: dev
+  namespace: prod
   labels:
     app: proxy-client
 data:
-  application-dev.yml: |
+  application-prod.yml: |
     server:
       port: 8200
       servlet:
@@ -17,16 +17,18 @@ data:
       application:
         name: PROXY-CLIENT
       profiles:
-        active: dev
+        active: prod
       zipkin:
         base-url: http://localhost:9411/
-      config:
-        import: optional:configserver:http://localhost:9296
     
     eureka:
       client:
-        enabled: false
-
+        enabled: true
+        serviceUrl:
+          defaultZone: http://service-discovery:8761/eureka/
+      instance:
+        hostname: proxy-client
+        prefer-ip-address: false
     
     management:
       endpoints:

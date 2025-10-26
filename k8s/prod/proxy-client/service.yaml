@@ -1,9 +1,9 @@
-# proxy-client-service.yaml
+# proxy-client-service.yaml (PROD)
 apiVersion: v1
 kind: Service
 metadata:
   name: proxy-client
-  namespace: dev
+  namespace: prod
   labels:
     app: proxy-client
 spec:

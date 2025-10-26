@@ -7,7 +7,7 @@ metadata:
   labels:
     app: product-service
 data:
-  application-dev.yml: |
+  application-stage.yml: |
     server:
       port: 8500
       servlet:

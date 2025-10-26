@@ -1,9 +1,9 @@
-# service-discovery-service.yaml
+# service-discovery-service.yaml (PROD)
 apiVersion: v1
 kind: Service
 metadata:
   name: service-discovery
-  namespace: dev
+  namespace: prod
   labels:
     app: service-discovery
 spec:

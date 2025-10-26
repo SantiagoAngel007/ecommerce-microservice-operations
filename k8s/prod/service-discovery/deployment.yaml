@@ -1,14 +1,19 @@
-# service-discovery-deployment.yaml
+# service-discovery-deployment.yaml (PROD)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: service-discovery
-  namespace: dev
+  namespace: prod
   labels:
     app: service-discovery
     version: v1
 spec:
-  replicas: 1
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: service-discovery
@@ -18,6 +23,18 @@ spec:
         app: service-discovery
         version: v1
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - service-discovery
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: service-discovery
         image: merako34/service-discovery:0.1.0
@@ -28,21 +45,23 @@ spec:
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
-          value: "dev"
+          value: "prod"
         - name: SPRING_APPLICATION_NAME
           value: "SERVICE-DISCOVERY"
+        - name: SPRING_CONFIG_LOCATION
+          value: "file:/config/application-prod.yml"
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
             memory: "512Mi"
             cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
         livenessProbe:
           httpGet:
             path: /actuator/health
             port: 8761
-          initialDelaySeconds: 3600
+          initialDelaySeconds: 90
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
@@ -50,7 +69,7 @@ spec:
           httpGet:
             path: /actuator/health
             port: 8761
-          initialDelaySeconds: 20
+          initialDelaySeconds: 90
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
