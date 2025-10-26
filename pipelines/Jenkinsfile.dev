@@ -183,7 +183,7 @@ pipeline {
         
         stage('9. Deploy to Kubernetes') {
             steps {
-                withCredentials([file(credentialsId: 'kubernetes-config', variable: 'KUBECONFIG')]) {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
                     NAMESPACE=${ENVIRONMENT}
                     
