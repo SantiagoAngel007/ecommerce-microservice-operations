@@ -3,7 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: proxy-client
-  namespace: dev
+  namespace: stage
   labels:
     app: proxy-client
     version: v1
@@ -28,7 +28,7 @@ spec:
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
-          value: "dev"
+          value: "stage"
         - name: SPRING_APPLICATION_NAME
           value: "PROXY-CLIENT"
         - name: SPRING_CONFIG_LOCATION

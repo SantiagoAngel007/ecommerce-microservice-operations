@@ -3,7 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: payment-service
-  namespace: dev
+  namespace: stage
   labels:
     app: payment-service
     version: v1
@@ -28,7 +28,7 @@ spec:
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
-          value: "dev"
+          value: "stage"
         - name: SPRING_APPLICATION_NAME
           value: "PAYMENT-SERVICE"
         - name: SPRING_CONFIG_LOCATION

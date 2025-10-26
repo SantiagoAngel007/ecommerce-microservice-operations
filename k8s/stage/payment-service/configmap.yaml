@@ -3,7 +3,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: payment-service-config
-  namespace: dev
+  namespace: stage
   labels:
     app: payment-service
 data:
@@ -17,11 +17,11 @@ data:
       application:
         name: PAYMENT-SERVICE
       profiles:
-        active: dev
+        active: stage
       config:
         import: optional:configserver:http://localhost:9296
       datasource:
-        url: jdbc:h2:mem:ecommerce_dev_db;DB_CLOSE_ON_EXIT=FALSE
+        url: jdbc:h2:mem:ecommerce_stage_db;DB_CLOSE_ON_EXIT=FALSE
         username: sa
         password: 
       jpa:
@@ -42,7 +42,12 @@ data:
     
     eureka:
       client:
-        enabled: false
+        enabled: true
+        serviceUrl:
+          defaultZone: http://service-discovery:8761/eureka/
+      instance:
+        hostname: payment-service
+        prefer-ip-address: false
     
     management:
       endpoints:
