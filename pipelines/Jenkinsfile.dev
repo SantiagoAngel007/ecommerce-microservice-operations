@@ -168,8 +168,18 @@ pipeline {
                 echo "⏭️  Saltando compilación y push (imágenes ya existen)"
             }
         }
+
+        stage('8. Check Minikube') {
+            steps {
+                echo "🔍 Verificando que Minikube esté corriendo..."
+                sh '''
+                    minikube status
+                    kubectl cluster-info
+                '''
+            }
+        }
         
-        stage('8. Deploy to Kubernetes') {
+        stage('9. Deploy to Kubernetes') {
             steps {
                 withCredentials([file(credentialsId: 'kubernetes-config', variable: 'KUBECONFIG')]) {
                     sh '''
@@ -191,7 +201,7 @@ pipeline {
             }
         }
         
-        stage('9. Verify Deployment') {
+        stage('10. Verify Deployment') {
             steps {
                 echo "✅ Verificando pods..."
                 sh '''
