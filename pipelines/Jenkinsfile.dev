@@ -169,12 +169,12 @@ pipeline {
             }
         }
 
-        stage('8. Check Minikube') {
+        stage('Check Kubernetes') {
             steps {
-                echo "🔍 Verificando que Minikube esté corriendo..."
+                echo "🔍 Verificando que Kubernetes esté corriendo..."
                 sh '''
-                    minikube status
                     kubectl cluster-info
+                    kubectl get nodes
                 '''
             }
         }
