@@ -1,0 +1,224 @@
+// Jenkinsfile - Pipeline DEV para 6 Microservicios
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_REGISTRY = "docker.io"
+        DOCKER_USERNAME = "merako34"
+        DOCKER_PASSWORD = credentials('dockerhub-credentials')
+        GITHUB_REPO_CODE = "https://github.com/SantiagoAngel007/ecommerce-microservice-backend-app.git"
+        GITHUB_REPO_OPS = "https://github.com/SantiagoAngel007/ecommerce-microservice-operations.git"
+        GITHUB_BRANCH = "master"
+        DOCKER_TAG = "0.1.0"
+    }
+    
+    parameters {
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'stage', 'prod'], description: 'Ambiente a desplegar')
+    }
+    
+    stages {
+        stage('1. Checkout - Code') {
+            steps {
+                echo "🔄 Clonando repositorio de código..."
+                dir('code') {
+                    checkout([$class: 'GitSCM', 
+                        branches: [[name: "${GITHUB_BRANCH}"]], 
+                        userRemoteConfigs: [[url: "${GITHUB_REPO_CODE}"]]
+                    ])
+                }
+            }
+        }
+        
+        stage('2. Checkout - Operations') {
+            steps {
+                echo "🔄 Clonando repositorio de operaciones..."
+                dir('ops') {
+                    checkout([$class: 'GitSCM', 
+                        branches: [[name: "${GITHUB_BRANCH}"]], 
+                        userRemoteConfigs: [[url: "${GITHUB_REPO_OPS}"]]
+                    ])
+                }
+            }
+        }
+        
+        stage('3. Check Docker Images') {
+            steps {
+                echo "🔍 Verificando si las imágenes ya existen en Docker Hub..."
+                script {
+                    def services = [
+                        'service-discovery',
+                        'proxy-client',
+                        'user-service',
+                        'product-service',
+                        'order-service',
+                        'payment-service'
+                    ]
+                    
+                    echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
+                    
+                    def allImagesExist = true
+                    services.each { service ->
+                        def imageExists = sh(
+                            script: """
+                                docker manifest inspect ${DOCKER_USERNAME}/${service}:${DOCKER_TAG} > /dev/null 2>&1
+                                echo \$?
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        
+                        if (imageExists == "0") {
+                            echo "✓ ${service}:${DOCKER_TAG} YA EXISTE en Docker Hub"
+                        } else {
+                            echo "✗ ${service}:${DOCKER_TAG} NO existe, necesita compilarse"
+                            allImagesExist = false
+                        }
+                    }
+                    
+                    env.ALL_IMAGES_EXIST = allImagesExist.toString()
+                }
+            }
+        }
+        
+        stage('4. Compile Services') {
+            when {
+                expression { env.ALL_IMAGES_EXIST == 'false' }
+            }
+            steps {
+                echo "🔨 Compilando microservicios..."
+                script {
+                    def services = [
+                        'service-discovery',
+                        'proxy-client',
+                        'user-service',
+                        'product-service',
+                        'order-service',
+                        'payment-service'
+                    ]
+                    
+                    services.each { service ->
+                        sh """
+                            echo "Compilando ${service}..."
+                            cd code/${service}
+                            mvn clean package -DskipTests
+                            cd ../..
+                            echo "✓ ${service} compilado"
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('5. Build Docker Images') {
+            when {
+                expression { env.ALL_IMAGES_EXIST == 'false' }
+            }
+            steps {
+                echo "🐳 Construyendo imágenes Docker..."
+                script {
+                    def services = [
+                        'service-discovery',
+                        'proxy-client',
+                        'user-service',
+                        'product-service',
+                        'order-service',
+                        'payment-service'
+                    ]
+                    
+                    services.each { service ->
+                        sh """
+                            cd code
+                            docker build -t ${DOCKER_USERNAME}/${service}:${DOCKER_TAG} -f ${service}/Dockerfile .
+                            cd ..
+                            echo "✓ ${service} imagen construida"
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('6. Push Docker Hub') {
+            when {
+                expression { env.ALL_IMAGES_EXIST == 'false' }
+            }
+            steps {
+                echo "📤 Subiendo a Docker Hub..."
+                sh '''
+                    echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
+                    
+                    docker push ${DOCKER_USERNAME}/service-discovery:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/proxy-client:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/user-service:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/product-service:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/order-service:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/payment-service:${DOCKER_TAG}
+                    
+                    echo "✓ Imágenes subidas a Docker Hub"
+                '''
+            }
+        }
+        
+        stage('7. Skip Build') {
+            when {
+                expression { env.ALL_IMAGES_EXIST == 'true' }
+            }
+            steps {
+                echo "⏭️  Saltando compilación y push (imágenes ya existen)"
+            }
+        }
+        
+        stage('8. Deploy to Kubernetes') {
+            steps {
+                echo "☸️  Desplegando en ${ENVIRONMENT}..."
+                sh '''
+                    NAMESPACE=${ENVIRONMENT}
+                    
+                    # Crear namespace si no existe
+                    kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                    
+                    # Aplicar manifests desde repo de operaciones
+                    kubectl apply -f ops/k8s/${NAMESPACE}/service-discovery/ -n ${NAMESPACE}
+                    kubectl apply -f ops/k8s/${NAMESPACE}/proxy-client/ -n ${NAMESPACE}
+                    kubectl apply -f ops/k8s/${NAMESPACE}/user-service/ -n ${NAMESPACE}
+                    kubectl apply -f ops/k8s/${NAMESPACE}/product-service/ -n ${NAMESPACE}
+                    kubectl apply -f ops/k8s/${NAMESPACE}/order-service/ -n ${NAMESPACE}
+                    kubectl apply -f ops/k8s/${NAMESPACE}/payment-service/ -n ${NAMESPACE}
+                    
+                    echo "✓ Deployment completado"
+                '''
+            }
+        }
+        
+        stage('9. Verify Deployment') {
+            steps {
+                echo "✅ Verificando pods..."
+                sh '''
+                    NAMESPACE=${ENVIRONMENT}
+                    sleep 30
+                    
+                    echo "Estado de pods:"
+                    kubectl get pods -n ${NAMESPACE}
+                '''
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo "✅ Pipeline DEV completado exitosamente"
+            sh '''
+                echo "Resumen:"
+                if [ "${ALL_IMAGES_EXIST}" = "true" ]; then
+                    echo "- Imágenes YA EXISTÍAN (no se recompilaron)"
+                else
+                    echo "- 6 Microservicios compilados"
+                    echo "- Imágenes Docker construidas"
+                    echo "- Imágenes subidas a Docker Hub"
+                fi
+                echo "- Deployed en Kubernetes ${ENVIRONMENT}"
+            '''
+        }
+        failure {
+            echo "❌ Pipeline falló"
+        }
+    }
+}
