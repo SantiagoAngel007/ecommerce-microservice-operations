@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+    
+    environment {
+        GITHUB_REPO_OPS = "https://github.com/SantiagoAngel007/ecommerce-microservice-operations.git"
+        GITHUB_BRANCH_OPS = "main"
+    }
+    
+    parameters {
+        choice(name: 'ENVIRONMENT', choices: ['dev', 'stage', 'prod'], description: 'Ambiente a limpiar')
+    }
+    
+    stages {
+        stage('1. Checkout - Operations') {
+            steps {
+                echo "🔄 Clonando repositorio de operaciones..."
+                dir('ops') {
+                    checkout([$class: 'GitSCM', 
+                        branches: [[name: "${GITHUB_BRANCH_OPS}"]], 
+                        userRemoteConfigs: [[url: "${GITHUB_REPO_OPS}"]]
+                    ])
+                }
+            }
+        }
+        
+        stage('2. Delete Namespace') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        NAMESPACE=${ENVIRONMENT}
+                        
+                        echo "🗑️  Eliminando namespace ${NAMESPACE}..."
+                        kubectl delete namespace ${NAMESPACE} --ignore-not-found=true
+                        
+                        echo "✓ Namespace ${NAMESPACE} eliminado"
+                        sleep 10
+                    '''
+                }
+            }
+        }
+        
+        stage('3. Verify Cleanup') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        NAMESPACE=${ENVIRONMENT}
+                        
+                        echo "✅ Verificando que el namespace fue eliminado:"
+                        kubectl get namespace ${NAMESPACE} 2>&1 || echo "✓ Namespace no existe (limpio)"
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo "✅ Cleanup completado exitosamente"
+        }
+        failure {
+            echo "❌ Cleanup falló"
+        }
+    }
+}
