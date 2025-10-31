@@ -33,6 +33,8 @@ spec:
           value: "stage"
         - name: SPRING_APPLICATION_NAME
           value: "SERVICE-DISCOVERY"
+        - name: SPRING_CONFIG_LOCATION
+          value: "file:/config/application-stage.yml"
         resources:
           requests:
             memory: "256Mi"
