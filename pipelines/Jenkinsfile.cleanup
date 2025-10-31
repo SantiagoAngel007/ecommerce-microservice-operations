@@ -27,12 +27,19 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                         NAMESPACE=${ENVIRONMENT}
-                        
+
                         echo "🗑️  Eliminando namespace ${NAMESPACE}..."
-                        kubectl delete namespace ${NAMESPACE} --ignore-not-found=true
-                        
+                        kubectl --insecure-skip-tls-verify=true delete namespace ${NAMESPACE} --ignore-not-found=true
+
                         echo "✓ Namespace ${NAMESPACE} eliminado"
                         sleep 10
                     '''
@@ -44,11 +51,24 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                         NAMESPACE=${ENVIRONMENT}
-                        
+
                         echo "✅ Verificando que el namespace fue eliminado:"
-                        kubectl get namespace ${NAMESPACE} 2>&1 || echo "✓ Namespace no existe (limpio)"
+                        kubectl --insecure-skip-tls-verify=true get namespace ${NAMESPACE} 2>&1 || echo "✓ Namespace no existe (limpio)"
+
+                        echo ""
+                        echo "=========================================="
+                        echo "NAMESPACES ACTIVOS:"
+                        echo "=========================================="
+                        kubectl --insecure-skip-tls-verify=true get namespaces
                     '''
                 }
             }
