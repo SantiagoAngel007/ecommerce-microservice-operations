@@ -1,3 +1,22 @@
+def setupKubeconfig(kubeconfigPath) {
+    """Setup kubeconfig to skip TLS certificate verification for self-signed certificates"""
+    sh '''
+        # Crear directorio temporal para kubeconfig
+        mkdir -p /tmp/k8s-jenkins
+
+        # Copiar kubeconfig a ubicación temporal
+        cp ''' + kubeconfigPath + ''' /tmp/k8s-jenkins/kubeconfig
+
+        # Deshabilitar verificación de certificado TLS auto-firmado
+        kubectl config set-cluster kubernetes \
+            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+            --insecure-skip-tls-verify=true || true
+
+        # Exportar para uso en commands posteriores
+        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
+    '''
+}
+
 pipeline {
     agent any
 
@@ -10,6 +29,7 @@ pipeline {
         GITHUB_BRANCH_CODE = "master"
         GITHUB_BRANCH_OPS = "main"
         DOCKER_TAG = "v0.2.0"
+        K8S_KUBECONFIG_TEMP = "/tmp/k8s-jenkins/kubeconfig"
     }
 
     parameters {
@@ -57,7 +77,16 @@ pipeline {
                     string(credentialsId: 'docker-email', variable: 'DOCKER_EMAIL')
                 ]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+
+                        # Deshabilitar verificación de certificado para certificados auto-firmados
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                         NAMESPACE=stage
 
                         echo "1️⃣ Creando namespace..."
@@ -226,8 +255,21 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+
+                        # Deshabilitar verificación de certificado para certificados auto-firmados
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
+
+                        echo "🔍 Verificando conexión a Kubernetes..."
                         kubectl cluster-info
+                        echo ""
+                        echo "📊 Nodos disponibles:"
                         kubectl get nodes
                     '''
                 }
@@ -247,7 +289,14 @@ pipeline {
                     string(credentialsId: 'docker-email', variable: 'DOCKER_EMAIL')
                 ]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                         NAMESPACE=${ENVIRONMENT}
 
                         # Verificar si el secret existe
@@ -276,7 +325,14 @@ pipeline {
                 echo "🏗️ Desplegando infraestructura..."
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                         NAMESPACE=${ENVIRONMENT}
 
                         echo "Desplegando Config Server..."
@@ -295,7 +351,14 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                         NAMESPACE=${ENVIRONMENT}
 
                         echo "📦 Desplegando microservicios..."
@@ -338,7 +401,14 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                         NAMESPACE=${ENVIRONMENT}
 
                         echo "⏳ Esperando a que los pods estén listos (máximo 5 minutos)..."
@@ -379,7 +449,14 @@ pipeline {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     script {
                         sh '''
-                            export KUBECONFIG=${KUBECONFIG}
+                            # Configurar kubeconfig para saltarse verificación de certificado TLS
+                            mkdir -p /tmp/k8s-jenkins
+                            cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                            kubectl config set-cluster kubernetes \
+                                --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                                --insecure-skip-tls-verify=true
+
+                            export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                             NAMESPACE=${ENVIRONMENT}
 
                             echo "🔍 Obteniendo IPs de servicios para las pruebas..."
@@ -459,7 +536,14 @@ pipeline {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     script {
                         sh '''
-                            export KUBECONFIG=${KUBECONFIG}
+                            # Configurar kubeconfig para saltarse verificación de certificado TLS
+                            mkdir -p /tmp/k8s-jenkins
+                            cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                            kubectl config set-cluster kubernetes \
+                                --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                                --insecure-skip-tls-verify=true
+
+                            export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                             NAMESPACE=${ENVIRONMENT}
 
                             # Esperar a que servicios respondan
@@ -532,7 +616,14 @@ pipeline {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     script {
                         sh '''
-                            export KUBECONFIG=${KUBECONFIG}
+                            # Configurar kubeconfig para saltarse verificación de certificado TLS
+                            mkdir -p /tmp/k8s-jenkins
+                            cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                            kubectl config set-cluster kubernetes \
+                                --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                                --insecure-skip-tls-verify=true
+
+                            export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                             NAMESPACE=${ENVIRONMENT}
 
                             echo "Configurando acceso a servicios en Kubernetes..."
