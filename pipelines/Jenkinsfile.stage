@@ -565,37 +565,37 @@ pipeline {
                             # User Service Integration Tests
                             echo "Testing user-service integration..."
                             cd user-service
-                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-user-integration.log || true
+                            mvn test -Dtest='*ApplicationTests' 2>&1 | tee ../../test-results-user-integration.log || true
                             cd ..
 
                             # Product Service Integration Tests
                             echo "Testing product-service integration..."
                             cd product-service
-                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-product-integration.log || true
+                            mvn test -Dtest='*ApplicationTests' 2>&1 | tee ../../test-results-product-integration.log || true
                             cd ..
 
                             # Order Service Integration Tests
                             echo "Testing order-service integration..."
                             cd order-service
-                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-order-integration.log || true
+                            mvn test -Dtest='*ApplicationTests' 2>&1 | tee ../../test-results-order-integration.log || true
                             cd ..
 
                             # Payment Service Integration Tests
                             echo "Testing payment-service integration..."
                             cd payment-service
-                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-payment-integration.log || true
+                            mvn test -Dtest='*ApplicationTests' 2>&1 | tee ../../test-results-payment-integration.log || true
                             cd ..
 
                             # Favourite Service Integration Tests
                             echo "Testing favourite-service integration..."
                             cd favourite-service
-                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-favourite-integration.log || true
+                            mvn test -Dtest='*ApplicationTests' 2>&1 | tee ../../test-results-favourite-integration.log || true
                             cd ..
 
                             # Shipping Service Integration Tests
                             echo "Testing shipping-service integration..."
                             cd shipping-service
-                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-shipping-integration.log || true
+                            mvn test -Dtest='*ApplicationTests' 2>&1 | tee ../../test-results-shipping-integration.log || true
                             cd ..
 
                             cd ..
@@ -656,8 +656,8 @@ pipeline {
                                 done
                             done
 
-                            # Instalar Locust si no está instalado
-                            pip install -q locust==2.15.1 2>/dev/null || pip install --user -q locust==2.15.1
+                            echo "Instalando dependencias de Python..."
+                            python3 -m pip install -q locust==2.15.1 2>/dev/null || python3 -m pip install --user -q locust==2.15.1
 
                             # Crear directorio de resultados
                             mkdir -p performance-tests-results
