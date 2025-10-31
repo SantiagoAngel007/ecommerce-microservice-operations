@@ -1,38 +1,37 @@
-# order-service-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: order-service
+  name: favourite-service
   namespace: stage
   labels:
-    app: order-service
+    app: favourite-service
     version: v1
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: order-service
+      app: favourite-service
   template:
     metadata:
       labels:
-        app: order-service
+        app: favourite-service
         version: v1
     spec:
       imagePullSecrets:
       - name: dockerhub-credentials
       containers:
-      - name: order-service
-        image: merako34/order-service:0.1.0
+      - name: favourite-service
+        image: merako34/favourite-service:0.1.0
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 8300
+        - containerPort: 8800
           name: http
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
           value: "stage"
         - name: SPRING_APPLICATION_NAME
-          value: "ORDER-SERVICE"
+          value: "FAVOURITE-SERVICE"
         - name: SPRING_CONFIG_LOCATION
           value: "file:/config/application-stage.yml"
         resources:
@@ -45,7 +44,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /actuator/health
-            port: 8300
+            port: 8800
           initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
@@ -53,7 +52,7 @@ spec:
         readinessProbe:
           httpGet:
             path: /actuator/health
-            port: 8300
+            port: 8800
           initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
@@ -65,4 +64,4 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: order-service-config
+          name: favourite-service-config

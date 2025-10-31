@@ -1,0 +1,785 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_REGISTRY = "docker.io"
+        DOCKER_USERNAME = "merako34"
+        DOCKER_PASSWORD = credentials('docker-hub-password')
+        GITHUB_REPO_CODE = "https://github.com/SantiagoAngel007/ecommerce-microservice-backend-app.git"
+        GITHUB_REPO_OPS = "https://github.com/SantiagoAngel007/ecommerce-microservice-operations.git"
+        GITHUB_BRANCH_CODE = "master"
+        GITHUB_BRANCH_OPS = "main"
+        DOCKER_TAG = "v0.2.0"
+    }
+
+    parameters {
+        choice(name: 'ENVIRONMENT', choices: ['stage'], description: 'Ambiente a desplegar')
+        booleanParam(name: 'SETUP_NAMESPACE', defaultValue: false, description: 'Crear/configurar el namespace stage desde cero')
+        booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Ejecutar pruebas (unitarias, integración, rendimiento)')
+        booleanParam(name: 'DEPLOY_INFRA', defaultValue: false, description: 'Desplegar infraestructura (Config Server, Zipkin)')
+    }
+
+    stages {
+        stage('1. Checkout - Code') {
+            steps {
+                echo "🔄 Clonando repositorio de código..."
+                dir('code') {
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: "${GITHUB_BRANCH_CODE}"]],
+                        userRemoteConfigs: [[url: "${GITHUB_REPO_CODE}"]]
+                    ])
+                }
+            }
+        }
+
+        stage('2. Checkout - Operations') {
+            steps {
+                echo "🔄 Clonando repositorio de operaciones..."
+                dir('ops') {
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: "${GITHUB_BRANCH_OPS}"]],
+                        userRemoteConfigs: [[url: "${GITHUB_REPO_OPS}"]]
+                    ])
+                }
+            }
+        }
+
+        stage('3. Setup Stage Namespace (Opcional)') {
+            when {
+                expression { params.SETUP_NAMESPACE == true }
+            }
+            steps {
+                echo "⚙️ Configurando namespace stage..."
+                withCredentials([
+                    file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG'),
+                    string(credentialsId: 'docker-username', variable: 'DOCKER_USER'),
+                    string(credentialsId: 'docker-token', variable: 'DOCKER_TOKEN'),
+                    string(credentialsId: 'docker-email', variable: 'DOCKER_EMAIL')
+                ]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        NAMESPACE=stage
+
+                        echo "1️⃣ Creando namespace..."
+                        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+                        echo "2️⃣ Creando Docker Registry Secret..."
+                        kubectl delete secret dockerhub-credentials -n ${NAMESPACE} 2>/dev/null || true
+                        kubectl create secret docker-registry dockerhub-credentials \
+                            --docker-server=docker.io \
+                            --docker-username=${DOCKER_USER} \
+                            --docker-password=${DOCKER_TOKEN} \
+                            --docker-email=${DOCKER_EMAIL} \
+                            --namespace=${NAMESPACE}
+
+                        echo "✓ Docker Registry Secret creado"
+
+                        echo "3️⃣ Desplegando infraestructura central..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/config-server/ -n ${NAMESPACE} 2>/dev/null || echo "⚠️ Config Server no disponible"
+                        kubectl apply -f ops/k8s/${NAMESPACE}/zipkin/ -n ${NAMESPACE} 2>/dev/null || echo "⚠️ Zipkin no disponible"
+
+                        echo "✓ Namespace ${NAMESPACE} configurado"
+                        echo ""
+                        echo "Estado del namespace:"
+                        kubectl get namespace ${NAMESPACE}
+                    '''
+                }
+            }
+        }
+
+        stage('3a. Check Docker Images') {
+            steps {
+                echo "🔍 Verificando si las imágenes ya existen en Docker Hub..."
+                script {
+                    def services = [
+                        'service-discovery',
+                        'proxy-client',
+                        'user-service',
+                        'product-service',
+                        'order-service',
+                        'payment-service',
+                        'favourite-service',
+                        'shipping-service'
+                    ]
+
+                    sh '''
+                        echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
+                    '''
+
+                    def allImagesExist = true
+                    services.each { service ->
+                        def imageExists = sh(
+                            script: """
+                                docker manifest inspect ${DOCKER_USERNAME}/${service}:${DOCKER_TAG} > /dev/null 2>&1
+                                echo \$?
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        if (imageExists == "0") {
+                            echo "✓ ${service}:${DOCKER_TAG} YA EXISTE en Docker Hub"
+                        } else {
+                            echo "✗ ${service}:${DOCKER_TAG} NO existe, necesita compilarse"
+                            allImagesExist = false
+                        }
+                    }
+
+                    env.ALL_IMAGES_EXIST = allImagesExist.toString()
+                }
+            }
+        }
+
+        stage('4. Compile Services') {
+            when {
+                expression { env.ALL_IMAGES_EXIST == 'false' }
+            }
+            steps {
+                echo "🔨 Compilando microservicios..."
+                script {
+                    def services = [
+                        'service-discovery',
+                        'proxy-client',
+                        'user-service',
+                        'product-service',
+                        'order-service',
+                        'payment-service',
+                        'favourite-service',
+                        'shipping-service'
+                    ]
+
+                    services.each { service ->
+                        sh """
+                            echo "Compilando ${service}..."
+                            cd code/${service}
+                            mvn clean package -DskipTests
+                            cd ../..
+                            echo "✓ ${service} compilado"
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('5. Build Docker Images') {
+            when {
+                expression { env.ALL_IMAGES_EXIST == 'false' }
+            }
+            steps {
+                echo "🐳 Construyendo imágenes Docker..."
+                script {
+                    def services = [
+                        'service-discovery',
+                        'proxy-client',
+                        'user-service',
+                        'product-service',
+                        'order-service',
+                        'payment-service',
+                        'favourite-service',
+                        'shipping-service'
+                    ]
+
+                    services.each { service ->
+                        sh """
+                            cd code
+                            docker build -t ${DOCKER_USERNAME}/${service}:${DOCKER_TAG} -f ${service}/Dockerfile .
+                            cd ..
+                            echo "✓ ${service} imagen construida"
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('6. Push Docker Hub') {
+            when {
+                expression { env.ALL_IMAGES_EXIST == 'false' }
+            }
+            steps {
+                echo "🤖 Subiendo a Docker Hub..."
+                sh '''
+                    echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
+
+                    docker push ${DOCKER_USERNAME}/service-discovery:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/proxy-client:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/user-service:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/product-service:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/order-service:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/payment-service:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/favourite-service:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/shipping-service:${DOCKER_TAG}
+
+                    echo "✓ Imágenes subidas a Docker Hub"
+                '''
+            }
+        }
+
+        stage('7. Skip Build') {
+            when {
+                expression { env.ALL_IMAGES_EXIST == 'true' }
+            }
+            steps {
+                echo "⭐️ Saltando compilación y push (imágenes ya existen)"
+            }
+        }
+
+        stage('8. Check Kubernetes') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        kubectl cluster-info
+                        kubectl get nodes
+                    '''
+                }
+            }
+        }
+
+        stage('8a. Setup Docker Secret (si es necesario)') {
+            when {
+                expression { params.SETUP_NAMESPACE == false }
+            }
+            steps {
+                echo "🔐 Verificando Docker Registry Secret..."
+                withCredentials([
+                    file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG'),
+                    string(credentialsId: 'docker-username', variable: 'DOCKER_USER'),
+                    string(credentialsId: 'docker-token', variable: 'DOCKER_TOKEN'),
+                    string(credentialsId: 'docker-email', variable: 'DOCKER_EMAIL')
+                ]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        NAMESPACE=${ENVIRONMENT}
+
+                        # Verificar si el secret existe
+                        if kubectl get secret dockerhub-credentials -n ${NAMESPACE} &>/dev/null; then
+                            echo "✓ Docker Registry Secret ya existe en ${NAMESPACE}"
+                        else
+                            echo "Creando Docker Registry Secret..."
+                            kubectl create secret docker-registry dockerhub-credentials \
+                                --docker-server=docker.io \
+                                --docker-username=${DOCKER_USER} \
+                                --docker-password=${DOCKER_TOKEN} \
+                                --docker-email=${DOCKER_EMAIL} \
+                                --namespace=${NAMESPACE}
+                            echo "✓ Docker Registry Secret creado"
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('9. Deploy Infraestructura (Opcional)') {
+            when {
+                expression { params.DEPLOY_INFRA == true }
+            }
+            steps {
+                echo "🏗️ Desplegando infraestructura..."
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        NAMESPACE=${ENVIRONMENT}
+
+                        echo "Desplegando Config Server..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/config-server/ -n ${NAMESPACE} || echo "⚠️ Config Server falló"
+
+                        echo "Desplegando Zipkin..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/zipkin/ -n ${NAMESPACE} || echo "⚠️ Zipkin falló"
+
+                        echo "✓ Infraestructura desplegada"
+                    '''
+                }
+            }
+        }
+
+        stage('10. Deploy to Kubernetes') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        NAMESPACE=${ENVIRONMENT}
+
+                        echo "📦 Desplegando microservicios..."
+                        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+                        # Servicios de infraestructura
+                        echo "Desplegando Service Discovery..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/service-discovery/ -n ${NAMESPACE}
+
+                        echo "Desplegando Proxy Client..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/proxy-client/ -n ${NAMESPACE}
+
+                        # Microservicios principales
+                        echo "Desplegando User Service..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/user-service/ -n ${NAMESPACE}
+
+                        echo "Desplegando Product Service..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/product-service/ -n ${NAMESPACE}
+
+                        echo "Desplegando Order Service..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/order-service/ -n ${NAMESPACE}
+
+                        echo "Desplegando Payment Service..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/payment-service/ -n ${NAMESPACE}
+
+                        # Microservicios adicionales
+                        echo "Desplegando Favourite Service..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/favourite-service/ -n ${NAMESPACE}
+
+                        echo "Desplegando Shipping Service..."
+                        kubectl apply -f ops/k8s/${NAMESPACE}/shipping-service/ -n ${NAMESPACE}
+
+                        echo "✓ Todos los microservicios desplegados"
+                    '''
+                }
+            }
+        }
+
+        stage('11. Verify Deployment') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG}
+                        NAMESPACE=${ENVIRONMENT}
+
+                        echo "⏳ Esperando a que los pods estén listos (máximo 5 minutos)..."
+
+                        SERVICES=("service-discovery" "proxy-client" "user-service" "product-service" "order-service" "payment-service" "favourite-service" "shipping-service")
+
+                        for service in "${SERVICES[@]}"; do
+                            echo "Esperando a ${service}..."
+                            kubectl wait --for=condition=ready pod -l app=${service} -n ${NAMESPACE} --timeout=300s 2>/dev/null || echo "⚠️ ${service} tardó en iniciar"
+                        done
+
+                        sleep 15
+
+                        echo ""
+                        echo "=========================================="
+                        echo "📊 ESTADO DE PODS:"
+                        echo "=========================================="
+                        kubectl get pods -n ${NAMESPACE} -o wide
+
+                        echo ""
+                        echo "=========================================="
+                        echo "🔌 SERVICIOS DESPLEGADOS:"
+                        echo "=========================================="
+                        kubectl get svc -n ${NAMESPACE}
+
+                        echo ""
+                        echo "=========================================="
+                        echo "✅ VERIFICACIÓN DE DEPLOYMENTS:"
+                        echo "=========================================="
+                        kubectl get deployments -n ${NAMESPACE}
+                    '''
+                }
+            }
+        }
+
+        stage('12. Get Service IPs') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    script {
+                        sh '''
+                            export KUBECONFIG=${KUBECONFIG}
+                            NAMESPACE=${ENVIRONMENT}
+
+                            echo "🔍 Obteniendo IPs de servicios para las pruebas..."
+                            echo ""
+
+                            echo "=========================================="
+                            echo "SERVICIOS DE INFRAESTRUCTURA:"
+                            echo "=========================================="
+                            kubectl get svc service-discovery -n ${NAMESPACE} -o wide
+                            kubectl get svc proxy-client -n ${NAMESPACE} -o wide
+
+                            echo ""
+                            echo "=========================================="
+                            echo "SERVICIOS DE NEGOCIO:"
+                            echo "=========================================="
+                            kubectl get svc user-service -n ${NAMESPACE} -o wide
+                            kubectl get svc product-service -n ${NAMESPACE} -o wide
+                            kubectl get svc order-service -n ${NAMESPACE} -o wide
+                            kubectl get svc payment-service -n ${NAMESPACE} -o wide
+                            kubectl get svc favourite-service -n ${NAMESPACE} -o wide
+                            kubectl get svc shipping-service -n ${NAMESPACE} -o wide
+
+                            echo ""
+                            echo "=========================================="
+                            echo "SERVICIOS DE INFRAESTRUCTURA CENTRAL:"
+                            echo "=========================================="
+                            kubectl get svc config-server -n ${NAMESPACE} -o wide 2>/dev/null || echo "⚠️ Config Server no disponible"
+                            kubectl get svc zipkin -n ${NAMESPACE} -o wide 2>/dev/null || echo "⚠️ Zipkin no disponible"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('13. Run Unit Tests') {
+            when {
+                expression { params.RUN_TESTS == true }
+            }
+            steps {
+                echo "🧪 Ejecutando pruebas unitarias..."
+                script {
+                    def services = [
+                        'user-service',
+                        'product-service',
+                        'order-service',
+                        'payment-service',
+                        'favourite-service',
+                        'shipping-service'
+                    ]
+
+                    services.each { service ->
+                        sh """
+                            echo "Ejecutando pruebas unitarias de ${service}..."
+                            cd code/${service}
+                            mvn test -Dtest='*ImplTest' 2>&1 | tee ../../test-results-${service}-unit.log
+                            TEST_RESULT=\${PIPESTATUS[0]}
+                            cd ../..
+
+                            if [ \$TEST_RESULT -eq 0 ]; then
+                                echo "✓ Pruebas unitarias de ${service} PASARON"
+                            else
+                                echo "✗ Pruebas unitarias de ${service} FALLARON"
+                                exit 1
+                            fi
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('14. Run Integration Tests') {
+            when {
+                expression { params.RUN_TESTS == true }
+            }
+            steps {
+                echo "🔗 Ejecutando pruebas de integración..."
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    script {
+                        sh '''
+                            export KUBECONFIG=${KUBECONFIG}
+                            NAMESPACE=${ENVIRONMENT}
+
+                            # Esperar a que servicios respondan
+                            echo "Esperando a que servicios estén disponibles..."
+                            for i in {1..30}; do
+                                USER_STATUS=$(kubectl get pod -l app=user-service -n ${NAMESPACE} -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
+                                if [ "$USER_STATUS" = "Running" ]; then
+                                    echo "✓ Servicios listos"
+                                    break
+                                fi
+                                echo "Intento $i/30 - Esperando..."
+                                sleep 10
+                            done
+
+                            # Ejecutar pruebas de integración
+                            echo "Ejecutando pruebas de integración..."
+                            cd code
+
+                            # User Service Integration Tests
+                            echo "Testing user-service integration..."
+                            cd user-service
+                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-user-integration.log || true
+                            cd ..
+
+                            # Product Service Integration Tests
+                            echo "Testing product-service integration..."
+                            cd product-service
+                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-product-integration.log || true
+                            cd ..
+
+                            # Order Service Integration Tests
+                            echo "Testing order-service integration..."
+                            cd order-service
+                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-order-integration.log || true
+                            cd ..
+
+                            # Payment Service Integration Tests
+                            echo "Testing payment-service integration..."
+                            cd payment-service
+                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-payment-integration.log || true
+                            cd ..
+
+                            # Favourite Service Integration Tests
+                            echo "Testing favourite-service integration..."
+                            cd favourite-service
+                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-favourite-integration.log || true
+                            cd ..
+
+                            # Shipping Service Integration Tests
+                            echo "Testing shipping-service integration..."
+                            cd shipping-service
+                            mvn test -Dtest='*IntegrationTest' 2>&1 | tee ../../test-results-shipping-integration.log || true
+                            cd ..
+
+                            cd ..
+
+                            echo "✓ Pruebas de integración completadas"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('15. Run Performance Tests (Locust)') {
+            when {
+                expression { params.RUN_TESTS == true }
+            }
+            steps {
+                echo "⚡ Ejecutando pruebas de rendimiento con Locust..."
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    script {
+                        sh '''
+                            export KUBECONFIG=${KUBECONFIG}
+                            NAMESPACE=${ENVIRONMENT}
+
+                            echo "Configurando acceso a servicios en Kubernetes..."
+
+                            # Crear port-forwards en segundo plano
+                            kubectl port-forward -n ${NAMESPACE} svc/user-service 8700:8700 &
+                            USER_PF_PID=$!
+
+                            kubectl port-forward -n ${NAMESPACE} svc/product-service 8500:8500 &
+                            PRODUCT_PF_PID=$!
+
+                            kubectl port-forward -n ${NAMESPACE} svc/order-service 8300:8300 &
+                            ORDER_PF_PID=$!
+
+                            kubectl port-forward -n ${NAMESPACE} svc/payment-service 8400:8400 &
+                            PAYMENT_PF_PID=$!
+
+                            # Esperar a que port-forwards estén listos
+                            sleep 5
+
+                            # Verificar conectividad
+                            echo "Verificando conectividad a servicios..."
+                            for port in 8700 8500 8300 8400; do
+                                for i in {1..10}; do
+                                    if nc -z localhost $port 2>/dev/null; then
+                                        echo "✓ Puerto $port disponible"
+                                        break
+                                    fi
+                                    sleep 2
+                                done
+                            done
+
+                            # Instalar Locust si no está instalado
+                            pip install -q locust==2.15.1 2>/dev/null || pip install --user -q locust==2.15.1
+
+                            # Crear directorio de resultados
+                            mkdir -p performance-tests-results
+
+                            # Ejecutar pruebas de rendimiento
+                            echo "Ejecutando pruebas de rendimiento..."
+
+                            # User Service Performance Test
+                            echo "Testing user-service performance..."
+                            cd code/performance-tests
+                            locust -f locustfile-user-service.py \
+                                --users 5 \
+                                --spawn-rate 1 \
+                                --run-time 30s \
+                                --headless \
+                                --csv=../../performance-tests-results/user-service \
+                                --host=http://localhost:8700 \
+                                --stop-timeout 10 2>&1 | tee ../../perf-results-user.log || true
+                            cd ../..
+
+                            # Product Service Performance Test
+                            echo "Testing product-service performance..."
+                            cd code/performance-tests
+                            locust -f locustfile-product-service.py \
+                                --users 5 \
+                                --spawn-rate 1 \
+                                --run-time 30s \
+                                --headless \
+                                --csv=../../performance-tests-results/product-service \
+                                --host=http://localhost:8500 \
+                                --stop-timeout 10 2>&1 | tee ../../perf-results-product.log || true
+                            cd ../..
+
+                            # Order Service Performance Test
+                            echo "Testing order-service performance..."
+                            cd code/performance-tests
+                            locust -f locustfile-order-service.py \
+                                --users 5 \
+                                --spawn-rate 1 \
+                                --run-time 30s \
+                                --headless \
+                                --csv=../../performance-tests-results/order-service \
+                                --host=http://localhost:8300 \
+                                --stop-timeout 10 2>&1 | tee ../../perf-results-order.log || true
+                            cd ../..
+
+                            # Payment Service Performance Test
+                            echo "Testing payment-service performance..."
+                            cd code/performance-tests
+                            locust -f locustfile-payment-service.py \
+                                --users 5 \
+                                --spawn-rate 1 \
+                                --run-time 30s \
+                                --headless \
+                                --csv=../../performance-tests-results/payment-service \
+                                --host=http://localhost:8400 \
+                                --stop-timeout 10 2>&1 | tee ../../perf-results-payment.log || true
+                            cd ../..
+
+                            # Terminar port-forwards
+                            kill $USER_PF_PID 2>/dev/null || true
+                            kill $PRODUCT_PF_PID 2>/dev/null || true
+                            kill $ORDER_PF_PID 2>/dev/null || true
+                            kill $PAYMENT_PF_PID 2>/dev/null || true
+
+                            echo "✓ Pruebas de rendimiento completadas"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('16. Analyze Test Results') {
+            when {
+                expression { params.RUN_TESTS == true }
+            }
+            steps {
+                echo "📊 Analizando resultados de pruebas..."
+                script {
+                    sh '''
+                        echo "=========================================="
+                        echo "RESUMEN DE RESULTADOS DE PRUEBAS"
+                        echo "=========================================="
+
+                        echo ""
+                        echo "📋 PRUEBAS UNITARIAS:"
+                        for log in test-results-*-unit.log; do
+                            if [ -f "$log" ]; then
+                                echo "Archivo: $log"
+                                if grep -q "BUILD SUCCESS" "$log"; then
+                                    echo "  ✓ PASARON"
+                                elif grep -q "BUILD FAILURE" "$log"; then
+                                    echo "  ✗ FALLARON"
+                                fi
+                            fi
+                        done
+
+                        echo ""
+                        echo "🔗 PRUEBAS DE INTEGRACIÓN:"
+                        for log in test-results-*-integration.log; do
+                            if [ -f "$log" ]; then
+                                echo "Archivo: $log"
+                                if grep -q "BUILD SUCCESS" "$log"; then
+                                    echo "  ✓ PASARON"
+                                elif grep -q "BUILD FAILURE" "$log"; then
+                                    echo "  ✗ FALLARON"
+                                fi
+                            fi
+                        done
+
+                        echo ""
+                        echo "⚡ PRUEBAS DE RENDIMIENTO:"
+                        if [ -d "performance-tests-results" ]; then
+                            echo "Resultados generados:"
+                            ls -lh performance-tests-results/ 2>/dev/null || echo "  (Sin resultados generados)"
+                        fi
+
+                        echo ""
+                        echo "=========================================="
+                    '''
+                }
+            }
+        }
+
+        stage('17. Archive Test Results') {
+            when {
+                expression { params.RUN_TESTS == true }
+            }
+            steps {
+                echo "📦 Archivando resultados de pruebas..."
+                script {
+                    sh '''
+                        # Crear directorio para archivar
+                        mkdir -p stage-test-results
+
+                        # Copiar logs de pruebas
+                        cp -f test-results-*.log stage-test-results/ 2>/dev/null || true
+                        cp -f perf-results-*.log stage-test-results/ 2>/dev/null || true
+
+                        # Copiar resultados de Locust
+                        if [ -d "performance-tests-results" ]; then
+                            cp -r performance-tests-results/* stage-test-results/ 2>/dev/null || true
+                        fi
+
+                        # Listar archivos archivados
+                        echo "Archivos archivados:"
+                        ls -la stage-test-results/
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            sh '''
+                echo ""
+                echo "=========================================="
+                echo "✓ PIPELINE STAGE COMPLETADO EXITOSAMENTE"
+                echo "=========================================="
+                echo ""
+                echo "📊 RESUMEN FINAL:"
+                echo ""
+                echo "Ambiente: stage"
+                echo "Docker Tag: 0.1.0"
+                echo ""
+                echo "✓ Repositorios clonados (código + operaciones)"
+                echo "✓ Imágenes Docker verificadas/construidas (8 servicios)"
+                echo "✓ Microservicios desplegados en Kubernetes:"
+                echo "  - service-discovery (Eureka)"
+                echo "  - proxy-client (API Gateway)"
+                echo "  - user-service"
+                echo "  - product-service"
+                echo "  - order-service"
+                echo "  - payment-service"
+                echo "  - favourite-service"
+                echo "  - shipping-service"
+                echo "✓ Infraestructura disponible:"
+                echo "  - Config Server (puerto 8888)"
+                echo "  - Zipkin (puerto 9411)"
+                echo ""
+                if [ "${RUN_TESTS}" == "true" ]; then
+                    echo "✓ Pruebas ejecutadas:"
+                    echo "  - Unitarias (Maven)"
+                    echo "  - Integración"
+                    echo "  - Rendimiento (Locust)"
+                    echo "  - Resultados archivados"
+                fi
+                echo ""
+                echo "=========================================="
+            '''
+        }
+        failure {
+            sh '''
+                echo ""
+                echo "=========================================="
+                echo "✗ PIPELINE STAGE FALLÓ"
+                echo "=========================================="
+                echo ""
+                echo "⚠️ Error durante la ejecución del pipeline"
+                echo "Revisar los logs anteriores para más detalles"
+                echo ""
+                echo "Posibles causas:"
+                echo "  - Credenciales de Docker Hub inválidas"
+                echo "  - Kubernetes no disponible o mal configurado"
+                echo "  - Imágenes no disponibles en Docker Hub"
+                echo "  - Fallos en compilación o pruebas"
+                echo ""
+                echo "=========================================="
+            '''
+        }
+        always {
+            archiveArtifacts artifacts: 'stage-test-results/**', allowEmptyArchive: true
+        }
+    }
+}

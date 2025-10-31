@@ -1,0 +1,366 @@
+================================================================================
+                    ÍNDICE DE MANIFIESTOS - STAGE ENVIRONMENT
+================================================================================
+
+Generado: 30 de Octubre 2024
+Ambiente: Staging (Pre-producción)
+Cluster: Kubernetes (Minikube / Docker Desktop / Cloud)
+
+================================================================================
+                         ESTRUCTURA DE DIRECTORIOS
+================================================================================
+
+k8s/stage/
+│
+├─ DOCUMENTACIÓN
+│  ├─ README.md                           (Guía principal del ambiente stage)
+│  ├─ DEPLOYMENT-GUIDE.md                 (Guía paso a paso de despliegue)
+│  ├─ SETUP-SUMMARY.md                    (Resumen de configuración)
+│  ├─ VERIFICATION-CHECKLIST.md           (Checklist de verificación)
+│  └─ MANIFEST-INDEX.txt                  (Este archivo)
+│
+├─ SCRIPTS DE SETUP
+│  ├─ setup-stage-namespace.sh            (Script Linux/macOS)
+│  └─ setup-stage-namespace.ps1           (Script Windows PowerShell)
+│
+├─ INFRAESTRUCTURA CENTRAL
+│  │
+│  ├─ config-server/
+│  │  ├─ deployment.yaml                  (Despliegue de Config Server)
+│  │  ├─ service.yaml                     (Servicio Kubernetes)
+│  │  └─ configmap.yaml                   (Configuraciones centralizadas)
+│  │
+│  ├─ zipkin/
+│  │  ├─ deployment.yaml                  (Despliegue de Zipkin)
+│  │  └─ service.yaml                     (Servicio Kubernetes)
+│  │
+│  ├─ service-discovery/
+│  │  ├─ deployment.yaml                  (Despliegue de Eureka)
+│  │  ├─ service.yaml                     (Servicio Kubernetes)
+│  │  └─ configmap.yaml                   (Configuración de Eureka)
+│  │
+│  └─ proxy-client/
+│     ├─ deployment.yaml                  (Despliegue de API Gateway)
+│     ├─ service.yaml                     (Servicio Kubernetes)
+│     └─ configmap.yaml                   (Configuración del proxy)
+│
+├─ MICROSERVICIOS
+│  │
+│  ├─ user-service/
+│  │  ├─ deployment.yaml                  (Gestión de usuarios)
+│  │  ├─ service.yaml
+│  │  └─ configmap.yaml
+│  │
+│  ├─ product-service/
+│  │  ├─ deployment.yaml                  (Catálogo de productos)
+│  │  ├─ service.yaml
+│  │  └─ configmap.yaml
+│  │
+│  ├─ order-service/
+│  │  ├─ deployment.yaml                  (Gestión de órdenes)
+│  │  ├─ service.yaml
+│  │  └─ configmap.yaml
+│  │
+│  ├─ payment-service/
+│  │  ├─ deployment.yaml                  (Procesamiento de pagos)
+│  │  ├─ service.yaml
+│  │  └─ configmap.yaml
+│  │
+│  ├─ favourite-service/
+│  │  ├─ deployment.yaml                  (Gestión de favoritos)
+│  │  ├─ service.yaml
+│  │  └─ configmap.yaml
+│  │
+│  └─ shipping-service/
+│     ├─ deployment.yaml                  (Envíos y logística)
+│     ├─ service.yaml
+│     └─ configmap.yaml
+│
+└─ SECRETOS Y CREDENCIALES
+   │
+   └─ secrets/
+      ├─ dockerhub-credentials-secret.yaml (Docker Registry Secret)
+      └─ README.md                         (Guía de secretos)
+
+================================================================================
+                         SERVICIOS Y PUERTOS
+================================================================================
+
+INFRAESTRUCTURA:
+  • Config Server          │ Puerto: 8888   │ URL: http://config-server:8888
+  • Zipkin                 │ Puerto: 9411   │ URL: http://zipkin:9411
+  • Service Discovery      │ Puerto: 8761   │ URL: http://service-discovery:8761
+  • Proxy Client           │ Puerto: 8200   │ URL: http://proxy-client:8200
+
+MICROSERVICIOS:
+  • User Service           │ Puerto: 8700   │ Path: /user-service
+  • Product Service        │ Puerto: 8500   │ Path: /product-service
+  • Order Service          │ Puerto: 8300   │ Path: /order-service
+  • Payment Service        │ Puerto: 8400   │ Path: /payment-service
+  • Favourite Service      │ Puerto: 8800   │ Path: /favourite-service
+  • Shipping Service       │ Puerto: 8600   │ Path: /shipping-service
+
+TOTAL: 10 servicios | 10 puertos únicos
+
+================================================================================
+                         RÁPIDO SETUP (5 MINUTOS)
+================================================================================
+
+Windows (PowerShell):
+  cd k8s\stage
+  .\setup-stage-namespace.ps1 `
+    -DockerUsername "tu_usuario" `
+    -DockerToken "tu_token" `
+    -DockerEmail "tu_email@example.com"
+
+Linux/macOS (Bash):
+  cd k8s/stage
+  chmod +x setup-stage-namespace.sh
+  ./setup-stage-namespace.sh tu_usuario tu_token tu_email@example.com
+
+Después:
+  kubectl get all -n stage              # Ver estado
+  kubectl port-forward -n stage svc/proxy-client 8200:8200
+
+================================================================================
+                         ARCHIVOS YAML GENERADOS
+================================================================================
+
+Deployments:          10 archivos
+Services:             10 archivos
+ConfigMaps:           10 archivos
+Secrets:              1 archivo
+---
+TOTAL MANIFIESTOS:    31 archivos YAML
+
+LÍNEAS DE CÓDIGO:     ~5000 líneas
+
+================================================================================
+                         CONFIGURACIÓN POR SERVICIO
+================================================================================
+
+Todos los microservicios incluyen:
+  ✅ Health checks (liveness + readiness probes)
+  ✅ ImagePullSecrets para Docker Hub
+  ✅ ConfigMaps para configuración centralizada
+  ✅ Eureka registration habilitado
+  ✅ Zipkin tracing habilitado
+  ✅ Config Server integration
+  ✅ Recursos CPU/Memory configurados
+  ✅ Logging centralizado
+  ✅ Resilience4j circuit breakers
+
+================================================================================
+                         CARACTERÍSTICAS PRINCIPALES
+================================================================================
+
+CONFIG SERVER:
+  • Centraliza configuración de todos los servicios
+  • Perfil: native (en ConfigMap)
+  • 8 archivos de configuración YAML
+  • Actualizaciones sin restart de servicios
+
+ZIPKIN:
+  • Distributed tracing
+  • Visualización de flujos de request
+  • Almacenamiento en memoria
+  • UI en puerto 9411
+
+EUREKA:
+  • Service discovery
+  • Auto-registro de microservicios
+  • Health monitoring
+  • Load balancing
+
+DATABASE:
+  • H2 en memoria
+  • Base de datos: ecommerce_stage_db
+  • Perfecta para testing
+  ⚠️ Nota: Datos NO persistentes
+
+================================================================================
+                         CREDENCIALES Y SECRETOS
+================================================================================
+
+Docker Registry:
+  • Secret: dockerhub-credentials
+  • Tipo: kubernetes.io/dockercfg
+  • Namespace: stage
+  • Usado por: Todos los deployments
+
+Variables de Entorno Necesarias:
+  DOCKER_USERNAME=tu_usuario
+  DOCKER_TOKEN=tu_token
+  DOCKER_EMAIL=tu_email@example.com
+
+================================================================================
+                         DOCUMENTACIÓN INCLUIDA
+================================================================================
+
+README.md (5 KB)
+   - Guía completa del ambiente
+   - Requisitos previos
+   - Instrucciones de instalación
+   - Verificación de servicios
+   - Port-forwarding
+   - Troubleshooting
+
+DEPLOYMENT-GUIDE.md (8 KB)
+   - Guía paso a paso
+   - Configuración inicial
+   - Verificación por pasos
+   - Health checks
+   - Scaling y updates
+   - Limpieza y rollback
+
+SETUP-SUMMARY.md (6 KB)
+   - Resumen de lo creado
+   - Estructura de archivos
+   - Características principales
+   - Configuración por servicio
+   - Próximos pasos
+
+VERIFICATION-CHECKLIST.md (10 KB)
+   - 97 verificaciones
+   - 14 fases de validación
+   - Comandos de verificación
+   - Checklist interactivo
+
+secrets/README.md (4 KB)
+   - Gestión de secretos
+   - Configuración automática
+   - Configuración manual
+   - Troubleshooting de credenciales
+
+TOTAL DOCUMENTACIÓN: ~33 KB de guías y referencias
+
+================================================================================
+                         RECURSOS CONFIGURADOS
+================================================================================
+
+Requests (Garantizados):
+  • Memoria: 256Mi por servicio
+  • CPU: 100m por servicio
+  • Excepto Zipkin: 512Mi / 200m
+
+Limits (Máximo):
+  • Memoria: 512Mi por servicio
+  • CPU: 250m por servicio
+  • Excepto Zipkin: 1Gi / 500m
+
+Health Checks:
+  • Liveness Probe: delay 60s, período 10s
+  • Readiness Probe: delay 30s, período 5s
+
+================================================================================
+                         CÓMO USAR ESTE ÍNDICE
+================================================================================
+
+1. SETUP INICIAL:
+   - Leer: README.md
+   - Ejecutar: setup-stage-namespace.ps1 (Windows) o setup-stage-namespace.sh (Linux)
+
+2. DEPLOYMENT:
+   - Leer: DEPLOYMENT-GUIDE.md
+   - Seguir pasos para desplegar servicios
+
+3. VERIFICACIÓN:
+   - Usar: VERIFICATION-CHECKLIST.md
+   - Completar 97 verificaciones
+
+4. TROUBLESHOOTING:
+   - Leer: README.md > Troubleshooting
+   - O: DEPLOYMENT-GUIDE.md > Troubleshooting
+
+5. ENTENDER SECRETOS:
+   - Leer: secrets/README.md
+
+================================================================================
+                         VERIFICACIÓN RÁPIDA
+================================================================================
+
+Después de setup, ejecuta:
+
+  # Ver estado general
+  kubectl get all -n stage
+
+  # Ver pods
+  kubectl get pods -n stage
+
+  # Ver servicios
+  kubectl get svc -n stage
+
+  # Ver eventos
+  kubectl get events -n stage
+
+Si todos los pods están en "Running", ¡estás listo!
+
+================================================================================
+                         ACCESO A SERVICIOS
+================================================================================
+
+Port-Forward (Desarrollo Local):
+
+  # Config Server
+  kubectl port-forward -n stage svc/config-server 8888:8888
+
+  # Zipkin
+  kubectl port-forward -n stage svc/zipkin 9411:9411
+
+  # Service Discovery
+  kubectl port-forward -n stage svc/service-discovery 8761:8761
+
+  # Proxy Client
+  kubectl port-forward -n stage svc/proxy-client 8200:8200
+
+Luego accede a:
+  • http://localhost:8888 (Config Server)
+  • http://localhost:9411 (Zipkin UI)
+  • http://localhost:8761 (Eureka Dashboard)
+  • http://localhost:8200 (API Gateway)
+
+================================================================================
+                         ESTADÍSTICAS
+================================================================================
+
+Manifiestos creados:       31 archivos YAML
+Documentación:             6 archivos Markdown + 1 TXT
+Scripts:                   2 archivos (sh + ps1)
+Líneas de código:          ~5000+
+Servicios:                 10 (4 infraestructura + 6 microservicios)
+ConfigMaps:                10
+Deployments:               10
+Services (Kubernetes):     10
+Secrets:                   1
+Total de características:  50+ en los manifiestos
+
+================================================================================
+                         VERSIÓN Y FECHA
+================================================================================
+
+Versión:                   1.0
+Fecha de Creación:         30 de Octubre 2024
+Ambiente:                  Stage (Pre-producción)
+Cluster Objetivo:          Kubernetes (Minikube/Docker Desktop/Cloud)
+Namespace:                 stage
+Status:                    COMPLETO Y LISTO PARA DESPLEGAR
+
+================================================================================
+                         PRÓXIMOS PASOS
+================================================================================
+
+1. Leer README.md
+2. Ejecutar setup-stage-namespace.ps1 (Windows) o setup-stage-namespace.sh (Linux)
+3. Usar VERIFICATION-CHECKLIST.md para verificar todo
+4. Ejecutar DEPLOYMENT-GUIDE.md para despliegue completo
+5. Acceder a servicios mediante port-forward
+6. Ejecutar pruebas de integración
+7. Ejecutar pruebas E2E
+8. Revisar métricas y logs
+9. Preparar para producción
+
+================================================================================
+
+FIN DEL ÍNDICE - 30 de Octubre 2024 - v1.0
+
+================================================================================

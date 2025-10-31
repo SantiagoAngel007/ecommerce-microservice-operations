@@ -1,25 +1,36 @@
-# product-service-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: product-service-config
+  name: favourite-service-config
   namespace: stage
   labels:
-    app: product-service
+    app: favourite-service
 data:
   application-stage.yml: |
     server:
-      port: 8500
+      port: 8800
       servlet:
-        context-path: /product-service 
-    
+        context-path: /favourite-service
+    eureka:
+      client:
+        enabled: true
+        serviceUrl:
+          defaultZone: http://service-discovery:8761/eureka/
+      instance:
+        hostname: favourite-service
+        prefer-ip-address: false
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "*"
+      health:
+        circuitbreakers:
+          enabled: true
+      endpoint:
+        health:
+          show-details: always
     spring:
-      application:
-        name: PRODUCT-SERVICE
-      profiles:
-        active: stage
-      config:
-        import: optional:configserver:http://config-server:8888
       datasource:
         url: jdbc:h2:mem:ecommerce_stage_db;DB_CLOSE_ON_EXIT=FALSE
         username: sa
@@ -39,29 +50,17 @@ data:
           path: /h2-console
       zipkin:
         base-url: http://zipkin:9411/
-    
-    eureka:
-      client:
-        enabled: true
-        serviceUrl:
-          defaultZone: http://service-discovery:8761/eureka/
-      instance:
-        hostname: product-service
-        prefer-ip-address: false
-    
-    management:
-      endpoints:
-        web:
-          exposure:
-            include: "*"
-      endpoint:
-        health:
-          show-details: always
-    
+      config:
+        import: optional:configserver:http://config-server:8888
+      application:
+        name: FAVOURITE-SERVICE
+      profiles:
+        active:
+          - stage
     resilience4j:
       circuitbreaker:
         instances:
-          productService:
+          favouriteService:
             register-health-indicator: true
             event-consumer-buffer-size: 10
             automatic-transition-from-open-to-half-open-enabled: true
@@ -71,7 +70,6 @@ data:
             sliding-window-size: 10
             wait-duration-in-open-state: 5s
             sliding-window-type: COUNT_BASED
-    
     logging:
       level:
         org:

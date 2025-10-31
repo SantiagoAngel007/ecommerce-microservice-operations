@@ -18,6 +18,8 @@ spec:
         app: service-discovery
         version: v1
     spec:
+      imagePullSecrets:
+      - name: dockerhub-credentials
       containers:
       - name: service-discovery
         image: merako34/service-discovery:0.1.0
@@ -42,7 +44,7 @@ spec:
           httpGet:
             path: /actuator/health
             port: 8761
-          initialDelaySeconds: 3600
+          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
@@ -50,7 +52,7 @@ spec:
           httpGet:
             path: /actuator/health
             port: 8761
-          initialDelaySeconds: 20
+          initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2

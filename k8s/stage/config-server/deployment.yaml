@@ -1,40 +1,37 @@
-# order-service-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: order-service
+  name: config-server
   namespace: stage
   labels:
-    app: order-service
+    app: config-server
     version: v1
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: order-service
+      app: config-server
   template:
     metadata:
       labels:
-        app: order-service
+        app: config-server
         version: v1
     spec:
       imagePullSecrets:
       - name: dockerhub-credentials
       containers:
-      - name: order-service
-        image: merako34/order-service:0.1.0
+      - name: config-server
+        image: springcloud/configserver:latest
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 8300
+        - containerPort: 8888
           name: http
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
-          value: "stage"
-        - name: SPRING_APPLICATION_NAME
-          value: "ORDER-SERVICE"
-        - name: SPRING_CONFIG_LOCATION
-          value: "file:/config/application-stage.yml"
+          value: "native"
+        - name: SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCHLOCATIONS
+          value: "file:///config"
         resources:
           requests:
             memory: "256Mi"
@@ -45,7 +42,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /actuator/health
-            port: 8300
+            port: 8888
           initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
@@ -53,16 +50,16 @@ spec:
         readinessProbe:
           httpGet:
             path: /actuator/health
-            port: 8300
+            port: 8888
           initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
         volumeMounts:
-        - name: config
+        - name: config-repo
           mountPath: /config
           readOnly: true
       volumes:
-      - name: config
+      - name: config-repo
         configMap:
-          name: order-service-config
+          name: config-server-repo

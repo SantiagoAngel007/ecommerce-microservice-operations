@@ -18,6 +18,8 @@ spec:
         app: payment-service
         version: v1
     spec:
+      imagePullSecrets:
+      - name: dockerhub-credentials
       containers:
       - name: payment-service
         image: merako34/payment-service:0.1.0
@@ -44,15 +46,15 @@ spec:
           httpGet:
             path: /actuator/health
             port: 8400
-          initialDelaySeconds: 3600
+          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /payment-service/actuator/health
+            path: /actuator/health
             port: 8400
-          initialDelaySeconds: 20
+          initialDelaySeconds: 30
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2

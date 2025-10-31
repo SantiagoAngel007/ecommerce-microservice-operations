@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: zipkin
+  namespace: stage
+  labels:
+    app: zipkin
+spec:
+  type: ClusterIP
+  selector:
+    app: zipkin
+  ports:
+  - name: http
+    port: 9411
+    targetPort: 9411
+    protocol: TCP
