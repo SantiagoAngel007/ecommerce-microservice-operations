@@ -512,7 +512,7 @@ pipeline {
                             echo "Ejecutando pruebas unitarias de ${service}..."
                             cd code/${service}
                             mvn test -Dtest='*ImplTest' 2>&1 | tee ../../test-results-${service}-unit.log
-                            TEST_RESULT=\${PIPESTATUS[0]}
+                            TEST_RESULT=\$?
                             cd ../..
 
                             if [ \$TEST_RESULT -eq 0 ]; then
