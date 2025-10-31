@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: user-service
+  name: zipkin
   namespace: prod
   labels:
-    app: user-service
+    app: zipkin
 spec:
   type: ClusterIP
   selector:
-    app: user-service
+    app: zipkin
   ports:
   - name: http
-    port: 8700
-    targetPort: 8700
+    port: 9411
+    targetPort: 9411
     protocol: TCP

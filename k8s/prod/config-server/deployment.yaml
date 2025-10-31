@@ -1,40 +1,37 @@
-# product-service-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: product-service
+  name: config-server
   namespace: prod
   labels:
-    app: product-service
+    app: config-server
     version: v1
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: product-service
+      app: config-server
   template:
     metadata:
       labels:
-        app: product-service
+        app: config-server
         version: v1
     spec:
       imagePullSecrets:
       - name: dockerhub-credentials
       containers:
-      - name: product-service
-        image: merako34/product-service:0.1.0
+      - name: config-server
+        image: springcloud/configserver:latest
         imagePullPolicy: IfNotPresent
         ports:
-        - containerPort: 8500
+        - containerPort: 8888
           name: http
           protocol: TCP
         env:
         - name: SPRING_PROFILES_ACTIVE
-          value: "prod"
-        - name: SPRING_APPLICATION_NAME
-          value: "PRODUCT-SERVICE"
-        - name: SPRING_CONFIG_LOCATION
-          value: "file:/config/application-prod.yml"
+          value: "native"
+        - name: SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCHLOCATIONS
+          value: "file:///config"
         resources:
           requests:
             memory: "1Gi"
@@ -45,24 +42,24 @@ spec:
         livenessProbe:
           httpGet:
             path: /actuator/health
-            port: 8500
-          initialDelaySeconds: 120
+            port: 8888
+          initialDelaySeconds: 60
           periodSeconds: 15
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /actuator/health
-            port: 8500
-          initialDelaySeconds: 60
-          periodSeconds: 15
+            port: 8888
+          initialDelaySeconds: 30
+          periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 2
         volumeMounts:
-        - name: config
+        - name: config-repo
           mountPath: /config
           readOnly: true
       volumes:
-      - name: config
+      - name: config-repo
         configMap:
-          name: product-service-config
+          name: config-server-repo

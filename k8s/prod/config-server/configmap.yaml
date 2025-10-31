@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-server-repo
+  namespace: prod
+  labels:
+    app: config-server
+data:
+  application.yml: |
+    spring:
+      cloud:
+        config:
+          server:
+            native:
+              search-locations: file:///config
+      profiles:
+        active: native
+
+  # Configuración común para todos los servicios
+  application-prod.yml: |
+    # Configuración base compartida para prod
+    spring:
+      jpa:
+        show-sql: false
+        hibernate:
+          ddl-auto: validate
+      h2:
+        console:
+          enabled: false
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health,info,metrics"
+      endpoint:
+        health:
+          show-details: always
+
+  # Configuración específica para user-service
+  user-service-prod.yml: |
+    server:
+      port: 8700
+      servlet:
+        context-path: /user-service
+
+    spring:
+      application:
+        name: USER-SERVICE
+      jpa:
+        show-sql: false
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health,info,metrics"
+
+  # Configuración específica para product-service
+  product-service-prod.yml: |
+    server:
+      port: 8500
+      servlet:
+        context-path: /product-service
+
+    spring:
+      application:
+        name: PRODUCT-SERVICE
+      jpa:
+        show-sql: false
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health,info,metrics"
+
+  # Configuración específica para order-service
+  order-service-prod.yml: |
+    server:
+      port: 8300
+      servlet:
+        context-path: /order-service
+
+    spring:
+      application:
+        name: ORDER-SERVICE
+      jpa:
+        show-sql: false
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health,info,metrics"
+
+  # Configuración específica para payment-service
+  payment-service-prod.yml: |
+    server:
+      port: 8400
+      servlet:
+        context-path: /payment-service
+
+    spring:
+      application:
+        name: PAYMENT-SERVICE
+      jpa:
+        show-sql: false
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health,info,metrics"
+
+  # Configuración específica para favourite-service
+  favourite-service-prod.yml: |
+    server:
+      port: 8800
+      servlet:
+        context-path: /favourite-service
+
+    spring:
+      application:
+        name: FAVOURITE-SERVICE
+      jpa:
+        show-sql: false
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health,info,metrics"
+
+  # Configuración específica para shipping-service
+  shipping-service-prod.yml: |
+    server:
+      port: 8600
+      servlet:
+        context-path: /shipping-service
+
+    spring:
+      application:
+        name: SHIPPING-SERVICE
+      jpa:
+        show-sql: false
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health,info,metrics"
+
+  # Configuración específica para proxy-client
+  proxy-client-prod.yml: |
+    server:
+      port: 8200
+      servlet:
+        context-path: /
+
+    spring:
+      application:
+        name: PROXY-CLIENT
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "health,info,metrics"

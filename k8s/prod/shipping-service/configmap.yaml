@@ -1,25 +1,36 @@
-# payment-service-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: payment-service-config
+  name: shipping-service-config
   namespace: prod
   labels:
-    app: payment-service
+    app: shipping-service
 data:
   application-prod.yml: |
     server:
-      port: 8400
+      port: 8600
       servlet:
-        context-path: /payment-service
-    
+        context-path: /shipping-service
+    eureka:
+      client:
+        enabled: true
+        serviceUrl:
+          defaultZone: http://service-discovery:8761/eureka/
+      instance:
+        hostname: shipping-service
+        prefer-ip-address: false
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: "*"
+      health:
+        circuitbreakers:
+          enabled: true
+      endpoint:
+        health:
+          show-details: always
     spring:
-      application:
-        name: PAYMENT-SERVICE
-      profiles:
-        active: prod
-      config:
-        import: optional:configserver:http://config-server:8888
       datasource:
         url: jdbc:h2:mem:ecommerce_prod_db;DB_CLOSE_ON_EXIT=FALSE
         username: sa
@@ -39,29 +50,17 @@ data:
           path: /h2-console
       zipkin:
         base-url: http://zipkin:9411/
-    
-    eureka:
-      client:
-        enabled: true
-        serviceUrl:
-          defaultZone: http://service-discovery:8761/eureka/
-      instance:
-        hostname: payment-service
-        prefer-ip-address: false
-    
-    management:
-      endpoints:
-        web:
-          exposure:
-            include: "*"
-      endpoint:
-        health:
-          show-details: always
-    
+      config:
+        import: optional:configserver:http://config-server:8888
+      application:
+        name: SHIPPING-SERVICE
+      profiles:
+        active:
+          - stage
     resilience4j:
       circuitbreaker:
         instances:
-          paymentService:
+          shippingService:
             register-health-indicator: true
             event-consumer-buffer-size: 10
             automatic-transition-from-open-to-half-open-enabled: true
@@ -71,7 +70,6 @@ data:
             sliding-window-size: 10
             wait-duration-in-open-state: 5s
             sliding-window-type: COUNT_BASED
-    
     logging:
       level:
         org:

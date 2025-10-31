@@ -2,11 +2,11 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: user-service-config
-  namespace: dev
+  namespace: prod
   labels:
     app: user-service
 data:
-  application-dev.yml: |
+  application-prod.yml: |
     server:
       port: 8700
       servlet:
@@ -16,13 +16,13 @@ data:
       application:
         name: USER-SERVICE
       profiles:
-        active: dev
+        active: prod
       config:
-        import: optional:configserver:http://localhost:9296
+        import: optional:configserver:http://config-server:8888
       datasource:
-        url: jdbc:h2:mem:ecommerce_dev_db;DB_CLOSE_ON_EXIT=FALSE
+        url: jdbc:h2:mem:ecommerce_prod_db;DB_CLOSE_ON_EXIT=FALSE
         username: sa
-        password: 
+        password:
       jpa:
         show-sql: true
         hibernate:
@@ -37,11 +37,16 @@ data:
           enabled: true
           path: /h2-console
       zipkin:
-        base-url: http://localhost:9411/
+        base-url: http://zipkin:9411/
     
     eureka:
       client:
-        enabled: false
+        enabled: true
+        serviceUrl:
+          defaultZone: http://service-discovery:8761/eureka/
+      instance:
+        hostname: user-service
+        prefer-ip-address: false
     
     management:
       endpoints:

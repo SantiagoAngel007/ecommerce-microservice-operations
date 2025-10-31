@@ -1,9 +1,9 @@
-# service-discovery-configmap.yaml (PROD)
+# service-discovery-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: service-discovery-config
-  namespace: prod
+  namespace: prod  
   labels:
     app: service-discovery
 data:
@@ -17,7 +17,7 @@ data:
       profiles:
         active: prod
       zipkin:
-        base-url: http://localhost:9411/
+        base-url: http://zipkin:9411/
     
     eureka:
       instance:

@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: user-service
+  name: config-server
   namespace: prod
   labels:
-    app: user-service
+    app: config-server
 spec:
   type: ClusterIP
   selector:
-    app: user-service
+    app: config-server
   ports:
   - name: http
-    port: 8700
-    targetPort: 8700
+    port: 8888
+    targetPort: 8888
     protocol: TCP

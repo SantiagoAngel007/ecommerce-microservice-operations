@@ -1,4 +1,4 @@
-# proxy-client-service.yaml (PROD)
+# proxy-client-service.yaml
 apiVersion: v1
 kind: Service
 metadata:

@@ -1,4 +1,4 @@
-# service-discovery-deployment.yaml (PROD)
+# service-discovery-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,11 +9,6 @@ metadata:
     version: v1
 spec:
   replicas: 2
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   selector:
     matchLabels:
       app: service-discovery
@@ -23,18 +18,8 @@ spec:
         app: service-discovery
         version: v1
     spec:
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                  - service-discovery
-              topologyKey: kubernetes.io/hostname
+      imagePullSecrets:
+      - name: dockerhub-credentials
       containers:
       - name: service-discovery
         image: merako34/service-discovery:0.1.0
@@ -52,25 +37,25 @@ spec:
           value: "file:/config/application-prod.yml"
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "250m"
+            memory: "1Gi"
+            cpu: "200m"
           limits:
             memory: "1Gi"
-            cpu: "1000m"
+            cpu: "500m"
         livenessProbe:
           httpGet:
             path: /actuator/health
             port: 8761
-          initialDelaySeconds: 90
-          periodSeconds: 10
+          initialDelaySeconds: 60
+          periodSeconds: 15
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /actuator/health
             port: 8761
-          initialDelaySeconds: 90
-          periodSeconds: 5
+          initialDelaySeconds: 60
+          periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 2
         volumeMounts:
