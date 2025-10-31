@@ -413,9 +413,9 @@ pipeline {
 
                         echo "⏳ Esperando a que los pods estén listos (máximo 5 minutos)..."
 
-                        SERVICES=("service-discovery" "proxy-client" "user-service" "product-service" "order-service" "payment-service" "favourite-service" "shipping-service")
+                        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
 
-                        for service in "${SERVICES[@]}"; do
+                        for service in $SERVICES; do
                             echo "Esperando a ${service}..."
                             kubectl --insecure-skip-tls-verify=true wait --for=condition=ready pod -l app=${service} -n ${NAMESPACE} --timeout=300s 2>/dev/null || echo "⚠️ ${service} tardó en iniciar"
                         done
