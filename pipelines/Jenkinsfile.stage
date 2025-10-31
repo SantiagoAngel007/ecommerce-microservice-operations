@@ -90,11 +90,11 @@ pipeline {
                         NAMESPACE=stage
 
                         echo "1️⃣ Creando namespace..."
-                        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                        kubectl --insecure-skip-tls-verify=true create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl --insecure-skip-tls-verify=true apply -f -
 
                         echo "2️⃣ Creando Docker Registry Secret..."
-                        kubectl delete secret dockerhub-credentials -n ${NAMESPACE} 2>/dev/null || true
-                        kubectl create secret docker-registry dockerhub-credentials \
+                        kubectl --insecure-skip-tls-verify=true delete secret dockerhub-credentials -n ${NAMESPACE} 2>/dev/null || true
+                        kubectl --insecure-skip-tls-verify=true create secret docker-registry dockerhub-credentials \
                             --docker-server=docker.io \
                             --docker-username=${DOCKER_USER} \
                             --docker-password=${DOCKER_TOKEN} \
@@ -104,13 +104,13 @@ pipeline {
                         echo "✓ Docker Registry Secret creado"
 
                         echo "3️⃣ Desplegando infraestructura central..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/config-server/ -n ${NAMESPACE} 2>/dev/null || echo "⚠️ Config Server no disponible"
-                        kubectl apply -f ops/k8s/${NAMESPACE}/zipkin/ -n ${NAMESPACE} 2>/dev/null || echo "⚠️ Zipkin no disponible"
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/config-server/ -n ${NAMESPACE} 2>/dev/null || echo "⚠️ Config Server no disponible"
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/zipkin/ -n ${NAMESPACE} 2>/dev/null || echo "⚠️ Zipkin no disponible"
 
                         echo "✓ Namespace ${NAMESPACE} configurado"
                         echo ""
                         echo "Estado del namespace:"
-                        kubectl get namespace ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true get namespace ${NAMESPACE}
                     '''
                 }
             }
@@ -267,10 +267,10 @@ pipeline {
                         export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
 
                         echo "🔍 Verificando conexión a Kubernetes..."
-                        kubectl cluster-info
+                        kubectl --insecure-skip-tls-verify=true cluster-info
                         echo ""
                         echo "📊 Nodos disponibles:"
-                        kubectl get nodes
+                        kubectl --insecure-skip-tls-verify=true get nodes
                     '''
                 }
             }
@@ -300,11 +300,11 @@ pipeline {
                         NAMESPACE=${ENVIRONMENT}
 
                         # Verificar si el secret existe
-                        if kubectl get secret dockerhub-credentials -n ${NAMESPACE} &>/dev/null; then
+                        if kubectl --insecure-skip-tls-verify=true get secret dockerhub-credentials -n ${NAMESPACE} &>/dev/null; then
                             echo "✓ Docker Registry Secret ya existe en ${NAMESPACE}"
                         else
                             echo "Creando Docker Registry Secret..."
-                            kubectl create secret docker-registry dockerhub-credentials \
+                            kubectl --insecure-skip-tls-verify=true create secret docker-registry dockerhub-credentials \
                                 --docker-server=docker.io \
                                 --docker-username=${DOCKER_USER} \
                                 --docker-password=${DOCKER_TOKEN} \
@@ -336,10 +336,10 @@ pipeline {
                         NAMESPACE=${ENVIRONMENT}
 
                         echo "Desplegando Config Server..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/config-server/ -n ${NAMESPACE} || echo "⚠️ Config Server falló"
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/config-server/ -n ${NAMESPACE} || echo "⚠️ Config Server falló"
 
                         echo "Desplegando Zipkin..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/zipkin/ -n ${NAMESPACE} || echo "⚠️ Zipkin falló"
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/zipkin/ -n ${NAMESPACE} || echo "⚠️ Zipkin falló"
 
                         echo "✓ Infraestructura desplegada"
                     '''
@@ -362,34 +362,34 @@ pipeline {
                         NAMESPACE=${ENVIRONMENT}
 
                         echo "📦 Desplegando microservicios..."
-                        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                        kubectl --insecure-skip-tls-verify=true create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl --insecure-skip-tls-verify=true apply -f -
 
                         # Servicios de infraestructura
                         echo "Desplegando Service Discovery..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/service-discovery/ -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/service-discovery/ -n ${NAMESPACE}
 
                         echo "Desplegando Proxy Client..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/proxy-client/ -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/proxy-client/ -n ${NAMESPACE}
 
                         # Microservicios principales
                         echo "Desplegando User Service..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/user-service/ -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/user-service/ -n ${NAMESPACE}
 
                         echo "Desplegando Product Service..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/product-service/ -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/product-service/ -n ${NAMESPACE}
 
                         echo "Desplegando Order Service..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/order-service/ -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/order-service/ -n ${NAMESPACE}
 
                         echo "Desplegando Payment Service..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/payment-service/ -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/payment-service/ -n ${NAMESPACE}
 
                         # Microservicios adicionales
                         echo "Desplegando Favourite Service..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/favourite-service/ -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/favourite-service/ -n ${NAMESPACE}
 
                         echo "Desplegando Shipping Service..."
-                        kubectl apply -f ops/k8s/${NAMESPACE}/shipping-service/ -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/shipping-service/ -n ${NAMESPACE}
 
                         echo "✓ Todos los microservicios desplegados"
                     '''
@@ -417,7 +417,7 @@ pipeline {
 
                         for service in "${SERVICES[@]}"; do
                             echo "Esperando a ${service}..."
-                            kubectl wait --for=condition=ready pod -l app=${service} -n ${NAMESPACE} --timeout=300s 2>/dev/null || echo "⚠️ ${service} tardó en iniciar"
+                            kubectl --insecure-skip-tls-verify=true wait --for=condition=ready pod -l app=${service} -n ${NAMESPACE} --timeout=300s 2>/dev/null || echo "⚠️ ${service} tardó en iniciar"
                         done
 
                         sleep 15
@@ -426,19 +426,19 @@ pipeline {
                         echo "=========================================="
                         echo "📊 ESTADO DE PODS:"
                         echo "=========================================="
-                        kubectl get pods -n ${NAMESPACE} -o wide
+                        kubectl --insecure-skip-tls-verify=true get pods -n ${NAMESPACE} -o wide
 
                         echo ""
                         echo "=========================================="
                         echo "🔌 SERVICIOS DESPLEGADOS:"
                         echo "=========================================="
-                        kubectl get svc -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true get svc -n ${NAMESPACE}
 
                         echo ""
                         echo "=========================================="
                         echo "✅ VERIFICACIÓN DE DEPLOYMENTS:"
                         echo "=========================================="
-                        kubectl get deployments -n ${NAMESPACE}
+                        kubectl --insecure-skip-tls-verify=true get deployments -n ${NAMESPACE}
                     '''
                 }
             }
@@ -465,26 +465,26 @@ pipeline {
                             echo "=========================================="
                             echo "SERVICIOS DE INFRAESTRUCTURA:"
                             echo "=========================================="
-                            kubectl get svc service-discovery -n ${NAMESPACE} -o wide
-                            kubectl get svc proxy-client -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc service-discovery -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc proxy-client -n ${NAMESPACE} -o wide
 
                             echo ""
                             echo "=========================================="
                             echo "SERVICIOS DE NEGOCIO:"
                             echo "=========================================="
-                            kubectl get svc user-service -n ${NAMESPACE} -o wide
-                            kubectl get svc product-service -n ${NAMESPACE} -o wide
-                            kubectl get svc order-service -n ${NAMESPACE} -o wide
-                            kubectl get svc payment-service -n ${NAMESPACE} -o wide
-                            kubectl get svc favourite-service -n ${NAMESPACE} -o wide
-                            kubectl get svc shipping-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc user-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc product-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc order-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc payment-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc favourite-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc shipping-service -n ${NAMESPACE} -o wide
 
                             echo ""
                             echo "=========================================="
                             echo "SERVICIOS DE INFRAESTRUCTURA CENTRAL:"
                             echo "=========================================="
-                            kubectl get svc config-server -n ${NAMESPACE} -o wide 2>/dev/null || echo "⚠️ Config Server no disponible"
-                            kubectl get svc zipkin -n ${NAMESPACE} -o wide 2>/dev/null || echo "⚠️ Zipkin no disponible"
+                            kubectl --insecure-skip-tls-verify=true get svc config-server -n ${NAMESPACE} -o wide 2>/dev/null || echo "⚠️ Config Server no disponible"
+                            kubectl --insecure-skip-tls-verify=true get svc zipkin -n ${NAMESPACE} -o wide 2>/dev/null || echo "⚠️ Zipkin no disponible"
                         '''
                     }
                 }
@@ -549,7 +549,7 @@ pipeline {
                             # Esperar a que servicios respondan
                             echo "Esperando a que servicios estén disponibles..."
                             for i in {1..30}; do
-                                USER_STATUS=$(kubectl get pod -l app=user-service -n ${NAMESPACE} -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
+                                USER_STATUS=$(kubectl --insecure-skip-tls-verify=true get pod -l app=user-service -n ${NAMESPACE} -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
                                 if [ "$USER_STATUS" = "Running" ]; then
                                     echo "✓ Servicios listos"
                                     break
@@ -629,16 +629,16 @@ pipeline {
                             echo "Configurando acceso a servicios en Kubernetes..."
 
                             # Crear port-forwards en segundo plano
-                            kubectl port-forward -n ${NAMESPACE} svc/user-service 8700:8700 &
+                            kubectl --insecure-skip-tls-verify=true port-forward -n ${NAMESPACE} svc/user-service 8700:8700 &
                             USER_PF_PID=$!
 
-                            kubectl port-forward -n ${NAMESPACE} svc/product-service 8500:8500 &
+                            kubectl --insecure-skip-tls-verify=true port-forward -n ${NAMESPACE} svc/product-service 8500:8500 &
                             PRODUCT_PF_PID=$!
 
-                            kubectl port-forward -n ${NAMESPACE} svc/order-service 8300:8300 &
+                            kubectl --insecure-skip-tls-verify=true port-forward -n ${NAMESPACE} svc/order-service 8300:8300 &
                             ORDER_PF_PID=$!
 
-                            kubectl port-forward -n ${NAMESPACE} svc/payment-service 8400:8400 &
+                            kubectl --insecure-skip-tls-verify=true port-forward -n ${NAMESPACE} svc/payment-service 8400:8400 &
                             PAYMENT_PF_PID=$!
 
                             # Esperar a que port-forwards estén listos
