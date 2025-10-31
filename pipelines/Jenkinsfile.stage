@@ -660,9 +660,6 @@ pipeline {
                                 done
                             done
 
-                            echo "Instalando dependencias de Python..."
-                            python3 -m pip install -q locust==2.15.1 2>/dev/null || python3 -m pip install --user -q locust==2.15.1
-
                             # Crear directorio de resultados
                             mkdir -p performance-tests-results
 
