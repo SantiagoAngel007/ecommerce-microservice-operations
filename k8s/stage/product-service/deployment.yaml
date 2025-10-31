@@ -44,7 +44,7 @@ spec:
             cpu: "250m"
         livenessProbe:
           httpGet:
-            path: /actuator/health
+            path: /product-service/actuator/health
             port: 8500
           initialDelaySeconds: 420
           periodSeconds: 10
@@ -52,7 +52,7 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /actuator/health
+            path: /product-service/actuator/health
             port: 8500
           initialDelaySeconds: 240
           periodSeconds: 5
