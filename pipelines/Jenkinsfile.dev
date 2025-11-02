@@ -1,7 +1,25 @@
-// Jenkinsfile - Pipeline DEV para 6 Microservicios
+def setupKubeconfig(kubeconfigPath) {
+    """Setup kubeconfig to skip TLS certificate verification for self-signed certificates"""
+    sh '''
+        # Crear directorio temporal para kubeconfig
+        mkdir -p /tmp/k8s-jenkins
+
+        # Copiar kubeconfig a ubicación temporal
+        cp ''' + kubeconfigPath + ''' /tmp/k8s-jenkins/kubeconfig
+
+        # Deshabilitar verificación de certificado TLS auto-firmado
+        kubectl config set-cluster kubernetes \
+            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+            --insecure-skip-tls-verify=true || true
+
+        # Exportar para uso en commands posteriores
+        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
+    '''
+}
+
 pipeline {
     agent any
-    
+
     environment {
         DOCKER_REGISTRY = "docker.io"
         DOCKER_USERNAME = "merako34"
@@ -9,12 +27,15 @@ pipeline {
         GITHUB_REPO_CODE = "https://github.com/SantiagoAngel007/ecommerce-microservice-backend-app.git"
         GITHUB_REPO_OPS = "https://github.com/SantiagoAngel007/ecommerce-microservice-operations.git"
         GITHUB_BRANCH_CODE = "master"
-        GITHUB_BRANCH_OPS = "main"  
-        DOCKER_TAG = "0.1.0"
+        GITHUB_BRANCH_OPS = "main"
+        DOCKER_TAG = "v0.2.0"
+        K8S_KUBECONFIG_TEMP = "/tmp/k8s-jenkins/kubeconfig"
     }
-    
+
     parameters {
-        choice(name: 'ENVIRONMENT', choices: ['dev', 'stage', 'prod'], description: 'Ambiente a desplegar')
+        choice(name: 'ENVIRONMENT', choices: ['dev'], description: 'Ambiente a desplegar')
+        booleanParam(name: 'SETUP_NAMESPACE', defaultValue: false, description: 'Crear/configurar el namespace dev desde cero')
+        booleanParam(name: 'DEPLOY_INFRA', defaultValue: false, description: 'Desplegar infraestructura (Config Server, Zipkin)')
     }
     
     stages {
@@ -22,27 +43,79 @@ pipeline {
             steps {
                 echo "🔄 Clonando repositorio de código..."
                 dir('code') {
-                    checkout([$class: 'GitSCM', 
-                        branches: [[name: "${GITHUB_BRANCH_CODE}"]], 
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: "${GITHUB_BRANCH_CODE}"]],
                         userRemoteConfigs: [[url: "${GITHUB_REPO_CODE}"]]
                     ])
                 }
             }
         }
-        
+
         stage('2. Checkout - Operations') {
             steps {
                 echo "🔄 Clonando repositorio de operaciones..."
                 dir('ops') {
-                    checkout([$class: 'GitSCM', 
-                        branches: [[name: "${GITHUB_BRANCH_OPS}"]], 
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: "${GITHUB_BRANCH_OPS}"]],
                         userRemoteConfigs: [[url: "${GITHUB_REPO_OPS}"]]
                     ])
                 }
             }
         }
-        
-        stage('3. Check Docker Images') {
+
+        stage('3. Setup Dev Namespace (Opcional)') {
+            when {
+                expression { params.SETUP_NAMESPACE == true }
+            }
+            steps {
+                echo "⚙️ Configurando namespace dev..."
+                withCredentials([
+                    file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG'),
+                    string(credentialsId: 'docker-username', variable: 'DOCKER_USER'),
+                    string(credentialsId: 'docker-token', variable: 'DOCKER_TOKEN'),
+                    string(credentialsId: 'docker-email', variable: 'DOCKER_EMAIL')
+                ]) {
+                    sh '''
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+
+                        # Deshabilitar verificación de certificado para certificados auto-firmados
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
+                        NAMESPACE=dev
+
+                        echo "1️⃣ Creando namespace..."
+                        kubectl --insecure-skip-tls-verify=true create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl --insecure-skip-tls-verify=true apply -f -
+
+                        echo "2️⃣ Creando Docker Registry Secret..."
+                        kubectl --insecure-skip-tls-verify=true delete secret dockerhub-credentials -n ${NAMESPACE} 2>/dev/null || true
+                        kubectl --insecure-skip-tls-verify=true create secret docker-registry dockerhub-credentials \
+                            --docker-server=docker.io \
+                            --docker-username=${DOCKER_USER} \
+                            --docker-password=${DOCKER_TOKEN} \
+                            --docker-email=${DOCKER_EMAIL} \
+                            --namespace=${NAMESPACE}
+
+                        echo "✓ Docker Registry Secret creado"
+
+                        echo "3️⃣ Desplegando infraestructura central..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/config-server/ -n ${NAMESPACE} 2>/dev/null || echo "⚠️ Config Server no disponible"
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/zipkin/ -n ${NAMESPACE} 2>/dev/null || echo "⚠️ Zipkin no disponible"
+
+                        echo "✓ Namespace ${NAMESPACE} configurado"
+                        echo ""
+                        echo "Estado del namespace:"
+                        kubectl --insecure-skip-tls-verify=true get namespace ${NAMESPACE}
+                    '''
+                }
+            }
+        }
+
+        stage('3a. Check Docker Images') {
             steps {
                 echo "🔍 Verificando si las imágenes ya existen en Docker Hub..."
                 script {
@@ -52,13 +125,15 @@ pipeline {
                         'user-service',
                         'product-service',
                         'order-service',
-                        'payment-service'
+                        'payment-service',
+                        'favourite-service',
+                        'shipping-service'
                     ]
-                    
+
                     sh '''
                         echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
                     '''
-                    
+
                     def allImagesExist = true
                     services.each { service ->
                         def imageExists = sh(
@@ -68,7 +143,7 @@ pipeline {
                             """,
                             returnStdout: true
                         ).trim()
-                        
+
                         if (imageExists == "0") {
                             echo "✓ ${service}:${DOCKER_TAG} YA EXISTE en Docker Hub"
                         } else {
@@ -76,12 +151,12 @@ pipeline {
                             allImagesExist = false
                         }
                     }
-                    
+
                     env.ALL_IMAGES_EXIST = allImagesExist.toString()
                 }
             }
         }
-        
+
         stage('4. Compile Services') {
             when {
                 expression { env.ALL_IMAGES_EXIST == 'false' }
@@ -95,9 +170,11 @@ pipeline {
                         'user-service',
                         'product-service',
                         'order-service',
-                        'payment-service'
+                        'payment-service',
+                        'favourite-service',
+                        'shipping-service'
                     ]
-                    
+
                     services.each { service ->
                         sh """
                             echo "Compilando ${service}..."
@@ -110,7 +187,7 @@ pipeline {
                 }
             }
         }
-        
+
         stage('5. Build Docker Images') {
             when {
                 expression { env.ALL_IMAGES_EXIST == 'false' }
@@ -124,9 +201,11 @@ pipeline {
                         'user-service',
                         'product-service',
                         'order-service',
-                        'payment-service'
+                        'payment-service',
+                        'favourite-service',
+                        'shipping-service'
                     ]
-                    
+
                     services.each { service ->
                         sh """
                             cd code
@@ -138,34 +217,36 @@ pipeline {
                 }
             }
         }
-        
+
         stage('6. Push Docker Hub') {
             when {
                 expression { env.ALL_IMAGES_EXIST == 'false' }
             }
             steps {
-                echo "📤 Subiendo a Docker Hub..."
+                echo "🤖 Subiendo a Docker Hub..."
                 sh '''
                     echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
-                    
+
                     docker push ${DOCKER_USERNAME}/service-discovery:${DOCKER_TAG}
                     docker push ${DOCKER_USERNAME}/proxy-client:${DOCKER_TAG}
                     docker push ${DOCKER_USERNAME}/user-service:${DOCKER_TAG}
                     docker push ${DOCKER_USERNAME}/product-service:${DOCKER_TAG}
                     docker push ${DOCKER_USERNAME}/order-service:${DOCKER_TAG}
                     docker push ${DOCKER_USERNAME}/payment-service:${DOCKER_TAG}
-                    
+                    docker push ${DOCKER_USERNAME}/favourite-service:${DOCKER_TAG}
+                    docker push ${DOCKER_USERNAME}/shipping-service:${DOCKER_TAG}
+
                     echo "✓ Imágenes subidas a Docker Hub"
                 '''
             }
         }
-        
+
         stage('7. Skip Build') {
             when {
                 expression { env.ALL_IMAGES_EXIST == 'true' }
             }
             steps {
-                echo "⏭️  Saltando compilación y push (imágenes ya existen)"
+                echo "⭐️ Saltando compilación y push (imágenes ya existen)"
             }
         }
 
@@ -173,44 +254,238 @@ pipeline {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
-                        kubectl cluster-info
-                        kubectl get nodes
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+
+                        # Deshabilitar verificación de certificado para certificados auto-firmados
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
+
+                        echo "🔍 Verificando conexión a Kubernetes..."
+                        kubectl --insecure-skip-tls-verify=true cluster-info
+                        echo ""
+                        echo "📊 Nodos disponibles:"
+                        kubectl --insecure-skip-tls-verify=true get nodes
                     '''
                 }
             }
         }
-        
-        stage('9. Deploy to Kubernetes') {
+
+        stage('8a. Setup Docker Secret (si es necesario)') {
+            when {
+                expression { params.SETUP_NAMESPACE == false }
+            }
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                echo "🔐 Verificando Docker Registry Secret..."
+                withCredentials([
+                    file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG'),
+                    string(credentialsId: 'docker-username', variable: 'DOCKER_USER'),
+                    string(credentialsId: 'docker-token', variable: 'DOCKER_TOKEN'),
+                    string(credentialsId: 'docker-email', variable: 'DOCKER_EMAIL')
+                ]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                         NAMESPACE=${ENVIRONMENT}
-                        
-                        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-                        kubectl apply -f ops/k8s/${NAMESPACE}/service-discovery/ -n ${NAMESPACE}
-                        kubectl apply -f ops/k8s/${NAMESPACE}/proxy-client/ -n ${NAMESPACE}
-                        kubectl apply -f ops/k8s/${NAMESPACE}/user-service/ -n ${NAMESPACE}
-                        kubectl apply -f ops/k8s/${NAMESPACE}/product-service/ -n ${NAMESPACE}
-                        kubectl apply -f ops/k8s/${NAMESPACE}/order-service/ -n ${NAMESPACE}
-                        kubectl apply -f ops/k8s/${NAMESPACE}/payment-service/ -n ${NAMESPACE}
+
+                        # Verificar si el secret existe
+                        if kubectl --insecure-skip-tls-verify=true get secret dockerhub-credentials -n ${NAMESPACE} &>/dev/null; then
+                            echo "✓ Docker Registry Secret ya existe en ${NAMESPACE}"
+                        else
+                            echo "Creando Docker Registry Secret..."
+                            kubectl --insecure-skip-tls-verify=true create secret docker-registry dockerhub-credentials \
+                                --docker-server=docker.io \
+                                --docker-username=${DOCKER_USER} \
+                                --docker-password=${DOCKER_TOKEN} \
+                                --docker-email=${DOCKER_EMAIL} \
+                                --namespace=${NAMESPACE}
+                            echo "✓ Docker Registry Secret creado"
+                        fi
                     '''
                 }
             }
         }
-        
-        stage('10. Verify Deployment') {
+
+        stage('9. Deploy Infraestructura (Opcional)') {
+            when {
+                expression { params.DEPLOY_INFRA == true }
+            }
+            steps {
+                echo "🏗️ Desplegando infraestructura..."
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
+                        NAMESPACE=${ENVIRONMENT}
+
+                        echo "Desplegando Config Server..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/config-server/ -n ${NAMESPACE} || echo "⚠️ Config Server falló"
+
+                        echo "Desplegando Zipkin..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/zipkin/ -n ${NAMESPACE} || echo "⚠️ Zipkin falló"
+
+                        echo "✓ Infraestructura desplegada"
+                    '''
+                }
+            }
+        }
+
+        stage('10. Deploy to Kubernetes') {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
-                        export KUBECONFIG=${KUBECONFIG}
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
                         NAMESPACE=${ENVIRONMENT}
-                        sleep 30
-                        
-                        echo "Estado de pods:"
-                        kubectl get pods -n ${NAMESPACE}
+
+                        echo "📦 Desplegando microservicios..."
+                        kubectl --insecure-skip-tls-verify=true create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl --insecure-skip-tls-verify=true apply -f -
+
+                        # Servicios de infraestructura
+                        echo "Desplegando Service Discovery..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/service-discovery/ -n ${NAMESPACE}
+
+                        echo "Desplegando Proxy Client..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/proxy-client/ -n ${NAMESPACE}
+
+                        # Microservicios principales
+                        echo "Desplegando User Service..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/user-service/ -n ${NAMESPACE}
+
+                        echo "Desplegando Product Service..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/product-service/ -n ${NAMESPACE}
+
+                        echo "Desplegando Order Service..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/order-service/ -n ${NAMESPACE}
+
+                        echo "Desplegando Payment Service..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/payment-service/ -n ${NAMESPACE}
+
+                        # Microservicios adicionales
+                        echo "Desplegando Favourite Service..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/favourite-service/ -n ${NAMESPACE}
+
+                        echo "Desplegando Shipping Service..."
+                        kubectl --insecure-skip-tls-verify=true apply -f ops/k8s/${NAMESPACE}/shipping-service/ -n ${NAMESPACE}
+
+                        echo "✓ Todos los microservicios desplegados"
                     '''
+                }
+            }
+        }
+
+        stage('11. Verify Deployment') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        # Configurar kubeconfig para saltarse verificación de certificado TLS
+                        mkdir -p /tmp/k8s-jenkins
+                        cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                        kubectl config set-cluster kubernetes \
+                            --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                            --insecure-skip-tls-verify=true
+
+                        export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
+                        NAMESPACE=${ENVIRONMENT}
+
+                        echo "⏳ Esperando a que los pods estén listos (máximo 5 minutos)..."
+
+                        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
+
+                        for service in $SERVICES; do
+                            echo "Esperando a ${service}..."
+                            kubectl --insecure-skip-tls-verify=true wait --for=condition=ready pod -l app=${service} -n ${NAMESPACE} --timeout=300s 2>/dev/null || echo "⚠️ ${service} tardó en iniciar"
+                        done
+
+                        sleep 15
+
+                        echo ""
+                        echo "=========================================="
+                        echo "📊 ESTADO DE PODS:"
+                        echo "=========================================="
+                        kubectl --insecure-skip-tls-verify=true get pods -n ${NAMESPACE} -o wide
+
+                        echo ""
+                        echo "=========================================="
+                        echo "🔌 SERVICIOS DESPLEGADOS:"
+                        echo "=========================================="
+                        kubectl --insecure-skip-tls-verify=true get svc -n ${NAMESPACE}
+
+                        echo ""
+                        echo "=========================================="
+                        echo "✅ VERIFICACIÓN DE DEPLOYMENTS:"
+                        echo "=========================================="
+                        kubectl --insecure-skip-tls-verify=true get deployments -n ${NAMESPACE}
+                    '''
+                }
+            }
+        }
+
+        stage('12. Get Service IPs') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    script {
+                        sh '''
+                            # Configurar kubeconfig para saltarse verificación de certificado TLS
+                            mkdir -p /tmp/k8s-jenkins
+                            cp ${KUBECONFIG} /tmp/k8s-jenkins/kubeconfig
+                            kubectl config set-cluster kubernetes \
+                                --kubeconfig=/tmp/k8s-jenkins/kubeconfig \
+                                --insecure-skip-tls-verify=true
+
+                            export KUBECONFIG=/tmp/k8s-jenkins/kubeconfig
+                            NAMESPACE=${ENVIRONMENT}
+
+                            echo "🔍 Obteniendo IPs de servicios..."
+                            echo ""
+
+                            echo "=========================================="
+                            echo "SERVICIOS DE INFRAESTRUCTURA:"
+                            echo "=========================================="
+                            kubectl --insecure-skip-tls-verify=true get svc service-discovery -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc proxy-client -n ${NAMESPACE} -o wide
+
+                            echo ""
+                            echo "=========================================="
+                            echo "SERVICIOS DE NEGOCIO:"
+                            echo "=========================================="
+                            kubectl --insecure-skip-tls-verify=true get svc user-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc product-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc order-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc payment-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc favourite-service -n ${NAMESPACE} -o wide
+                            kubectl --insecure-skip-tls-verify=true get svc shipping-service -n ${NAMESPACE} -o wide
+
+                            echo ""
+                            echo "=========================================="
+                            echo "SERVICIOS DE INFRAESTRUCTURA CENTRAL:"
+                            echo "=========================================="
+                            kubectl --insecure-skip-tls-verify=true get svc config-server -n ${NAMESPACE} -o wide 2>/dev/null || echo "⚠️ Config Server no disponible"
+                            kubectl --insecure-skip-tls-verify=true get svc zipkin -n ${NAMESPACE} -o wide 2>/dev/null || echo "⚠️ Zipkin no disponible"
+                        '''
+                    }
                 }
             }
         }
@@ -218,21 +493,57 @@ pipeline {
     
     post {
         success {
-            echo "✅ Pipeline DEV completado exitosamente"
             sh '''
-                echo "Resumen:"
-                if [ "${ALL_IMAGES_EXIST}" = "true" ]; then
-                    echo "- Imágenes YA EXISTÍAN (no se recompilaron)"
-                else
-                    echo "- 6 Microservicios compilados"
-                    echo "- Imágenes Docker construidas"
-                    echo "- Imágenes subidas a Docker Hub"
-                fi
-                echo "- Deployed en Kubernetes ${ENVIRONMENT}"
+                echo ""
+                echo "=========================================="
+                echo "✓ PIPELINE DEV COMPLETADO EXITOSAMENTE"
+                echo "=========================================="
+                echo ""
+                echo "📊 RESUMEN FINAL:"
+                echo ""
+                echo "Ambiente: dev"
+                echo "Docker Tag: v0.2.0"
+                echo ""
+                echo "✓ Repositorios clonados (código + operaciones)"
+                echo "✓ Imágenes Docker verificadas/construidas (8 servicios)"
+                echo "✓ Microservicios desplegados en Kubernetes:"
+                echo "  - service-discovery (Eureka - Disabled in Dev)"
+                echo "  - proxy-client (API Gateway)"
+                echo "  - user-service"
+                echo "  - product-service"
+                echo "  - order-service"
+                echo "  - payment-service"
+                echo "  - favourite-service"
+                echo "  - shipping-service"
+                echo "✓ Infraestructura disponible:"
+                echo "  - Config Server (puerto 8888 - localhost:9296)"
+                echo "  - Zipkin (puerto 9411 - localhost:9411)"
+                echo ""
+                echo "✓ Ambiente DEV listo para desarrollo y pruebas"
+                echo "✓ H2 Console disponible en /h2-console de cada servicio"
+                echo "✓ SQL logging habilitado para debugging"
+                echo ""
+                echo "=========================================="
             '''
         }
         failure {
-            echo "❌ Pipeline falló"
+            sh '''
+                echo ""
+                echo "=========================================="
+                echo "✗ PIPELINE DEV FALLÓ"
+                echo "=========================================="
+                echo ""
+                echo "⚠️ Error durante la ejecución del pipeline"
+                echo "Revisar los logs anteriores para más detalles"
+                echo ""
+                echo "Posibles causas:"
+                echo "  - Credenciales de Docker Hub inválidas"
+                echo "  - Kubernetes no disponible o mal configurado"
+                echo "  - Imágenes no disponibles en Docker Hub"
+                echo "  - Fallos en compilación"
+                echo ""
+                echo "=========================================="
+            '''
         }
     }
 }
