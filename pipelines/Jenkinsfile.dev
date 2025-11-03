@@ -475,7 +475,6 @@ pipeline {
                             kubectl --insecure-skip-tls-verify=true get svc product-service -n ${NAMESPACE} -o wide
                             kubectl --insecure-skip-tls-verify=true get svc order-service -n ${NAMESPACE} -o wide
                             kubectl --insecure-skip-tls-verify=true get svc payment-service -n ${NAMESPACE} -o wide
-                            kubectl --insecure-skip-tls-verify=true get svc favourite-service -n ${NAMESPACE} -o wide
                             kubectl --insecure-skip-tls-verify=true get svc shipping-service -n ${NAMESPACE} -o wide
 
                             echo ""
