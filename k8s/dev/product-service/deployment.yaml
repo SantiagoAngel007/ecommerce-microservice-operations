@@ -44,7 +44,7 @@ spec:
           httpGet:
             path: /actuator/health
             port: 8500
-          initialDelaySeconds: 3600
+          initialDelaySeconds: 420
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
@@ -52,7 +52,7 @@ spec:
           httpGet:
             path: /product-service/actuator/health
             port: 8500
-          initialDelaySeconds: 20
+          initialDelaySeconds: 240
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
