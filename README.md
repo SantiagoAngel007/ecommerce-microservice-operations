@@ -1,16 +1,27 @@
 # ecommerce-microservice-operations
 
-Repositorio de infraestructura y operaciones para el sistema de microservicios de e-commerce. Este proyecto contiene toda la configuración necesaria para ejecutar, probar y desplegar la aplicación en diferentes ambientes (desarrollo, staging y producción).
+Repositorio de infraestructura y operaciones para el sistema de microservicios de e-commerce. Este proyecto contiene toda la configuración necesaria para ejecutar, probar y desplegar la aplicación en diferentes ambientes (desarrollo, staging y producción) usando **Docker Desktop con Kubernetes integrado**.
 
 ## Descripción General
 
 Este repositorio forma parte del **Taller 2: Pruebas y Lanzamiento** y se encarga de:
 
-- **Configuración de infraestructura**: Kubernetes (Minikube), Docker, Jenkins
+- **Configuración de infraestructura**: Kubernetes (Docker Desktop), Docker, Jenkins
 - **Pipelines CI/CD**: Construcción, pruebas y despliegue automatizado
 - **Gestión de ambientes**: Desarrollo, staging y producción
 - **Credenciales y secretos**: Configuración segura de acceso a registros y servicios
 - **Automatización**: Scripts para iniciar/detener servicios sin perder datos
+
+## Requisitos Previos
+
+- **Windows 11 / macOS / Linux**
+- **Docker Desktop** (versión reciente con Kubernetes habilitado)
+- **kubectl** (v1.28.0 o superior)
+- **PowerShell** (en Windows) o bash (en Linux/macOS)
+- **Git**
+- **8GB de RAM mínimo** (para Docker Desktop + Kubernetes)
+- **Cuenta en Docker Hub** (para push de imágenes)
+- **Visual Studio Code** o editor de texto (opcional)
 
 ## Estructura del Proyecto
 
@@ -24,35 +35,26 @@ ecommerce-microservice-operations/
 │       ├── basic-security.groovy    # Configuración de seguridad
 │       └── configure-docker.groovy  # Integración con Docker
 │
-├── kubernetes/                       # Manifiestos de Kubernetes
-│   ├── kubernetes.md                # Documentación de deployments
-│   └── [manifiestos por microservicio]
+├── k8s/                              # Manifiestos de Kubernetes
+│   ├── dev/                         # Ambiente de desarrollo
+│   ├── stage/                       # Ambiente de staging
+│   ├── prod/                        # Ambiente de producción
+│   └── namespaces/                  # Configuración de namespaces
 │
 ├── setup/                            # Guías y scripts de configuración
 │   ├── Jenkins_setup.md             # Instalación y configuración de Jenkins
 │   ├── config_setup.md              # Configuración de credenciales
 │   ├── fast_start.md                # Comandos para apagar/levantar servicios
-│   └── credentials-setup.ps1        # Script de automatización
 │
 ├── docs/                             # Documentación general
-│   └── docs.md                       # Archivos de documentación
+│   └── Reporte_final.md             # Reportes finales
+│   └── Release_notes.md
+│   └── Test_results.md
 │
 ├── env.config                        # Variables de entorno (NO subir a Git)
 ├── .gitignore                        # Archivos a ignorar en Git
 └── README.md                         # Este archivo
-
 ```
-
-## Requisitos Previos
-
-- **Windows 11 / macOS / Linux**
-- **Docker Desktop** (versión reciente)
-- **Minikube** (v1.28.0 o superior)
-- **kubectl** (v1.28.0 o superior)
-- **PowerShell** (en Windows) o bash (en Linux/macOS)
-- **Git**
-- **8GB de RAM mínimo** (para Docker + Minikube)
-- **Cuenta en Docker Hub** (para push de imágenes)
 
 ## Instalación Rápida
 
@@ -64,66 +66,159 @@ git clone https://github.com/[tu-usuario]/ecommerce-microservice-operations.git
 cd ecommerce-microservice-operations
 ```
 
-### 2. Configurar Minikube
+### 2. Habilitar Kubernetes en Docker Desktop
 
-```powershell
-# Ejecutar todos los pasos en setup/minikube_setup.md
-# O ejecutar manualmente:
+**Windows:**
+1. Abre Docker Desktop
+2. Ve a `Settings` → `Kubernetes`
+3. Marca la opción `Enable Kubernetes`
+4. Click en `Apply & Restart`
+5. Espera a que se inicie (toma unos minutos)
 
-minikube start --driver=docker --cpus=4 --memory=8192 --disk-size=4g
+**macOS:**
+1. Abre Docker Desktop desde Applications
+2. Haz click en el ícono de Docker en la barra superior
+3. Ve a `Preferences` → `Kubernetes`
+4. Marca `Enable Kubernetes`
+5. Click en `Apply & Restart`
+
+**Linux:**
+```bash
+# Si usas Docker Desktop en Linux, sigue los mismos pasos del ícono de Docker
+# O instala Docker Desktop desde: https://docs.docker.com/desktop/install/linux-installation/
+```
+
+### 3. Verificar que Kubernetes está habilitado
+
+```bash
+kubectl version
+kubectl get nodes
+```
+
+Debe mostrar un nodo con nombre `docker-desktop` y status `Ready`.
+
+### 4. Crear namespaces
+
+```bash
 kubectl create namespace dev
 kubectl create namespace stage
 kubectl create namespace prod
 ```
 
-Ver: [`setup/minikube_setup.md`](setup/minikube_setup.md)
+Verificar:
+```bash
+kubectl get namespaces
+```
 
-### 3. Levantar Jenkins
+### 5. Levantar Jenkins
 
-```powershell
+```bash
 cd jenkins
 docker-compose build --no-cache
 docker-compose up -d
 ```
 
-Ver: [`setup/Jenkins_setup.md`](setup/Jenkins_setup.md)
+Acceder a Jenkins:
+```
+http://localhost:8080
+```
 
-### 4. Configurar Credenciales
+Ver detalles completos en: [`setup/Jenkins_setup.md`](setup/Jenkins_setup.md)
 
-```powershell
-# Crear secretos en Kubernetes y Jenkins
-# Ver: setup/config_setup.md
+### 6. Configurar Credenciales de Docker Hub
 
+```bash
+# Para namespace dev
 kubectl create secret docker-registry dockerhub-credentials \
     --docker-server=docker.io \
     --docker-username=TU_USUARIO \
     --docker-password=TU_TOKEN \
     --docker-email=TU_EMAIL \
     --namespace=dev
+
+# Para namespace stage
+kubectl create secret docker-registry dockerhub-credentials \
+    --docker-server=docker.io \
+    --docker-username=TU_USUARIO \
+    --docker-password=TU_TOKEN \
+    --docker-email=TU_EMAIL \
+    --namespace=stage
+
+# Para namespace prod
+kubectl create secret docker-registry dockerhub-credentials \
+    --docker-server=docker.io \
+    --docker-username=TU_USUARIO \
+    --docker-password=TU_TOKEN \
+    --docker-email=TU_EMAIL \
+    --namespace=prod
 ```
 
-Ver: [`setup/config_setup.md`](setup/config_setup.md)
+Ver detalles completos en: [`setup/config_setup.md`](setup/config_setup.md)
 
 ## Microservicios Configurados
 
-Los siguientes 6 microservicios tienen pipelines CI/CD configurados:
+Los siguientes 6 microservicios tienen pipelines CI/CD completamente configurados:
 
-1. **User Service** (8700) - Gestión de usuarios y autenticación
-2. **Product Service** (8500) - Catálogo de productos
-3. **Order Service** (8300) - Gestión de órdenes y carritos
-4. **Payment Service** (8400) - Procesamiento de pagos
-5. **Favourite Service** (8800) - Gestión de favoritos
-6. **Shipping Service** (8600) - Envíos y logística
+| Servicio | Puerto | Función |
+|----------|--------|---------|
+| **User Service** | 8700 | Gestión de usuarios y autenticación |
+| **Product Service** | 8500 | Catálogo de productos |
+| **Order Service** | 8300 | Gestión de órdenes y carritos |
+| **Payment Service** | 8400 | Procesamiento de pagos |
+| **Favourite Service** | 8800 | Gestión de favoritos |
+| **Shipping Service** | 8600 | Envíos y logística |
 
-Todos los servicios se comunican entre sí a través de la malla de microservicios, permitiendo pruebas de integración completas.
+### Componentes de Infraestructura
+
+Además de los microservicios, se incluyen:
+
+- **Config Server** - Centraliza la configuración de todos los servicios
+- **Eureka (Service Discovery)** - Service registry para comunicación inter-servicios
+- **Zipkin** - Distributed tracing para observabilidad
+- **Proxy Client (API Gateway)** - Enrutamiento de requests
+
+## Pipelines CI/CD
+
+### Estructura de los Pipelines
+
+Cada microservicio tiene 3 pipelines correspondientes a los 3 ambientes:
+
+#### Pipeline DEV (Desarrollo)
+- Clonar repositorio
+- Build con Maven
+- Construir imagen Docker
+- Push a Docker Hub
+- Desplegar en namespace `dev`
+- **Tiempo**: ~5 min
+
+#### Pipeline STAGE (Staging)
+- Todos los pasos del dev
+- Pruebas unitarias
+- Pruebas de integración
+- Pruebas de rendimiento
+- Desplegar en namespace `stage`
+- **Tiempo**: ~11 min
+
+#### Pipeline PROD (Producción)
+- Validación de cambios
+- Construcción y pruebas completas
+- Push a Docker Hub
+- Despliegue en namespace `prod`
+- Generación automática de Release Notes
+- **Tiempo**: ~10 min
 
 ## Componentes de Infraestructura
 
-### Kubernetes (Minikube)
+### Docker Desktop Kubernetes
 
 - **3 Namespaces**: dev, stage, prod
-- **Servicios**: Zipkin (tracing), Eureka (service discovery), Config Server
-- **Plugins**: ingress, dashboard, metrics-server, registry
+- **Contexto**: docker-desktop (por defecto)
+- **Ventajas sobre Minikube**:
+  - ✅ Más ligero y rápido
+  - ✅ Integrado directamente en Docker Desktop
+  - ✅ Mejor rendimiento
+  - ✅ Actualización automática
+  - ✅ Sin necesidad de comando `minikube start`
 
 ### Jenkins
 
@@ -138,151 +233,111 @@ Todos los servicios se comunican entre sí a través de la malla de microservici
 - **Imágenes**: Base en Spring Boot
 - **Volúmenes**: Datos persistentes para Jenkins
 
-## Pipelines CI/CD
-
-### Estructura del Pipeline
-
-Cada microservicio tiene 3 pipelines correspondientes a los 3 ambientes:
-
-#### 1. Pipeline Dev (Desarrollo)
-- Clonar repositorio
-- Build con Maven
-- Pruebas unitarias
-- Construir imagen Docker
-- Push a Docker Hub
-- Desplegar en namespace `dev`
-
-#### 2. Pipeline Stage (Staging)
-- Todos los pasos del dev
-- Pruebas de integración
-- Pruebas E2E
-- Desplegar en namespace `stage`
-
-#### 3. Pipeline Master (Producción)
-- Todos los pasos anteriores
-- Pruebas de rendimiento/estrés con Locust
-- Validación de sistema
-- Generar Release Notes
-- Desplegar en namespace `prod`
-
-## Pruebas Implementadas
-
-### Unitarias (5+ por servicio)
-- Validación de componentes individuales
-- Pruebas de lógica de negocio
-- Tests de servicios y controladores
-
-### Integración (5+ por servicio)
-- Comunicación entre servicios
-- Integración con base de datos
-- APIs internas
-
-### E2E (5+ por servicio)
-- Flujos completos de usuario
-- Validación de procesos de negocio
-- Casos de uso reales
-
-### Rendimiento y Estrés
-- Pruebas con Locust
-- Simulación de carga realista
-- Métricas: tiempo de respuesta, throughput, tasa de errores
-
-## Credenciales
-
-### Variables de Entorno
-
-Se requiere un archivo `env.config` (no versionado):
-
-```bash
-DOCKER_USERNAME=tu_usuario
-DOCKER_TOKEN=tu_token
-DOCKER_EMAIL=tu_email
-JENKINS_URL=http://localhost:8080
-KUBE_CONTEXT=minikube
-```
-
-### Secretos de Kubernetes
-
-Se crean automáticamente en todos los namespaces:
-- `dockerhub-credentials`: Para acceso al registro Docker Hub
-- `kubernetes-config`: Kubeconfig para acceso a Kubernetes
-
-### Jenkins Credentials
-
-- `dockerhub-credentials`: Username + Password
-- `kubernetes-config`: Kubeconfig (Secret text)
-
 ## Comandos Útiles
 
-### Apagar (sin perder datos)
+### Verificar estado de Kubernetes
 
-```powershell
-minikube stop
-docker stop jenkins-controller
+```bash
+# Ver nodos
+kubectl get nodes
+
+# Ver namespaces
+kubectl get namespaces
+
+# Ver contexto actual
+kubectl config current-context
+
+# Cambiar namespace por defecto
+kubectl config set-context --current --namespace=dev
 ```
 
-### Levantar de nuevo
+### Gestionar pods y servicios
 
-```powershell
-minikube start
-docker start jenkins-controller
+```bash
+# Ver todos los pods en un namespace
+kubectl get pods -n dev
+kubectl get pods -n stage
+kubectl get pods -n prod
+
+# Ver servicios
+kubectl get services -n dev
+
+# Ver logs de un pod
+kubectl logs <pod-name> -n dev
+
+# Acceder a un pod
+kubectl exec -it <pod-name> -n dev -- /bin/bash
+
+# Borrar un namespace (cuidado: elimina todo dentro)
+kubectl delete namespace dev
 ```
 
-### Ver estado
+### Port forwarding para acceder a servicios localmente
 
-```powershell
-minikube status
-kubectl get pods -A
-docker ps | Select-String jenkins
+```bash
+# Acceder a un servicio específico
+kubectl port-forward -n dev svc/user-service 8700:8700
+kubectl port-forward -n dev svc/product-service 8500:8500
+kubectl port-forward -n dev svc/proxy-client 8200:8200
+
+# Acceder a Zipkin (tracing)
+kubectl port-forward -n dev svc/zipkin 9411:9411
 ```
 
-### Dashboard
+### Gestionar Jenkins
 
-```powershell
-minikube dashboard
+```bash
+# Ver logs de Jenkins
+docker logs jenkins
+
+# Reiniciar Jenkins
+docker-compose -f jenkins/docker-compose.yml restart
+
+# Parar Jenkins
+docker-compose -f jenkins/docker-compose.yml stop
+
+# Iniciar Jenkins
+docker-compose -f jenkins/docker-compose.yml up -d
 ```
 
-Ver más en: [`setup/fast_start.md`](setup/fast_start.md)
+## Troubleshooting
 
-## Documentación
+### Kubernetes no está habilitado
 
-- [`setup/minikube_setup.md`](setup/minikube_setup.md) - Guía completa de Minikube
-- [`setup/Jenkins_setup.md`](setup/Jenkins_setup.md) - Instalación y configuración
-- [`setup/config_setup.md`](setup/config_setup.md) - Configuración de credenciales
-- [`setup/fast_start.md`](setup/fast_start.md) - Comandos rápidos
+**Error**: `unable to connect to the server: dial tcp 127.0.0.1:6443: connect: connection refused`
 
-## Solución de Problemas
+**Solución**:
+1. Abre Docker Desktop
+2. Ve a `Settings` → `Kubernetes`
+3. Asegúrate de que `Enable Kubernetes` esté marcado
+4. Click en `Apply & Restart`
 
-### Minikube no inicia
-```powershell
-minikube delete --all
-minikube start --driver=docker --cpus=2 --memory=4096
-```
+### Pods no logran descargar imágenes
 
-### Jenkins no accesible
-```powershell
-docker logs jenkins-controller
-docker restart jenkins-controller
-```
+**Error**: `ImagePullBackOff` o `ErrImagePull`
 
-### Secretos no se crean
-```powershell
+**Solución**:
+```bash
+# Verifica que el secret de Docker Hub existe
 kubectl get secrets -n dev
-kubectl describe secret dockerhub-credentials -n dev
+
+# Si no existe, créalo
+kubectl create secret docker-registry dockerhub-credentials \
+    --docker-server=docker.io \
+    --docker-username=TU_USUARIO \
+    --docker-password=TU_TOKEN \
+    --docker-email=TU_EMAIL \
+    --namespace=dev
 ```
 
-### Puerto 8080 en uso
-Cambiar puerto en `jenkins/docker-compose.yml`:
-```yaml
-ports:
-  - "8081:8080"
-```
+### Jenkins no se conecta a Kubernetes
 
-## Flujo de Trabajo
+**Error**: `Unable to connect to Kubernetes server`
 
-1. **Desarrollo**: Cambios en el repositorio del backend → Pipeline dev → Despliegue en dev
-2. **Testing**: Ejecución de pruebas → Pipeline stage → Despliegue en stage
-3. **Producción**: Validación final → Pipeline master → Despliegue en prod + Release Notes
+**Solución**:
+1. Verifica que `kubectl` esté funcionando: `kubectl version`
+2. Configura la credencial de Kubernetes en Jenkins con el archivo kubeconfig
+3. Ubicación típica: `~/.kube/config` en Windows/Mac/Linux
 
 ## Reportes y Métricas
 
@@ -293,45 +348,14 @@ Cada pipeline genera:
 - **Análisis**: Interpretación de pruebas de rendimiento
 - **Release Notes**: Documentación de versiones desplegadas
 
-## Archivos Importantes
+## Métricas del Proyecto
 
-| Archivo | Propósito |
-|---------|-----------|
-| `env.config` | Variables de entorno (NO versionado) |
-| `.gitignore` | Archivos a ignorar |
-| `jenkins/Dockerfile` | Imagen custom de Jenkins |
-| `jenkins/docker-compose.yml` | Orquestación de servicios |
-| `jenkins/plugins.txt` | Lista de plugins |
-| `setup/*.md` | Guías de configuración |
-
-## Buenas Prácticas
-
-- Nunca subir `env.config`, `.docker-credentials/`, o kubeconfigs a Git
-- Usar `minikube stop` en lugar de `minikube delete`
-- Usar `docker stop` en lugar de `docker rm`
-- Verificar logs antes de reintentar: `docker logs` o `minikube logs`
-- Mantener backups de configuraciones críticas
-
-## Changelog
-
-### v1.0.0
-- Configuración inicial de Minikube
-- Setup de Jenkins con plugins
-- Credenciales para Docker Hub y Kubernetes
-- Guías de instalación y operación
-
-## Soporte y Contribuciones
-
-Para reportar problemas o sugerencias, crear un issue en el repositorio.
-
-## Licencia
-
-Este proyecto es parte del curso de Taller 2: Pruebas y Lanzamiento.
-
-## Autor
-
-Generado para el Taller 2 - Pruebas y Lanzamiento (2025)
-
----
-
-**Nota**: Este repositorio es solo para operaciones e infraestructura. El código de los microservicios se encuentra en el repositorio principal: [ecommerce-microservice-backend-app](https://github.com/SelimHorri/ecommerce-microservice-backend-app/)
+| Métrica | Valor |
+|---------|-------|
+| Microservicios Configurados | 6 |
+| Namespaces | 3 (dev, stage, prod) |
+| Pipelines | 3 (dev, stage, master) |
+| Pruebas Unitarias | ✅ Implementadas |
+| Pruebas de Integración | ✅ Implementadas |
+| Pruebas de Rendimiento | ✅ Implementadas |
+| Tasa de Éxito | 83.33% |
