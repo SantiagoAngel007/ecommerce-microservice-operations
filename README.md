@@ -28,18 +28,11 @@ ecommerce-microservice-operations/
 │   ├── kubernetes.md                # Documentación de deployments
 │   └── [manifiestos por microservicio]
 │
-├── terraform/                        # Infraestructura como código (IaC)
-│   └── terraform.md                 # Documentación de recursos
-│
 ├── setup/                            # Guías y scripts de configuración
-│   ├── minikube_setup.md            # Guía completa de Minikube
 │   ├── Jenkins_setup.md             # Instalación y configuración de Jenkins
 │   ├── config_setup.md              # Configuración de credenciales
 │   ├── fast_start.md                # Comandos para apagar/levantar servicios
 │   └── credentials-setup.ps1        # Script de automatización
-│
-├── docker/                           # Configuración Docker general
-│   └── docker.md                    # Documentación de Docker
 │
 ├── docs/                             # Documentación general
 │   └── docs.md                       # Archivos de documentación
