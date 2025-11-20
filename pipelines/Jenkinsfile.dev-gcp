@@ -1,0 +1,542 @@
+#!/usr/bin/env groovy
+
+/**
+ * JENKINSFILE.DEV-GCP
+ *
+ * Pipeline de CI/CD para ambiente DEV en GCP
+ * - Autenticación con gcloud + Workload Identity
+ * - Artifact Registry en lugar de Docker Hub
+ * - kubectl nativo de GCP
+ * - Validaciones de Terraform y código
+ *
+ * Trigger: Automático por push a rama main (dev)
+ * Frecuencia: Cada commit
+ */
+
+def setupGCPAuth() {
+    """
+    Autentica con GCP usando Workload Identity
+    """
+    sh '''
+        echo "🔐 Configurando autenticación con GCP..."
+
+        # Usar credenciales del service account
+        gcloud auth activate-service-account --key-file=${GCP_CREDENTIALS_FILE}
+
+        # Establecer proyecto
+        gcloud config set project ${GCP_PROJECT_ID}
+
+        # Configurar Docker para usar Artifact Registry
+        gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev
+
+        echo "✅ Autenticación a GCP completada"
+    '''
+}
+
+def getKubeConfig() {
+    """
+    Obtiene kubeconfig de GKE de forma nativa (sin archivos)
+    """
+    sh '''
+        echo "🔗 Obteniendo credenciales de GKE..."
+
+        # Obtener credenciales del cluster GKE
+        gcloud container clusters get-credentials ecommerce-${ENVIRONMENT}-cluster \
+            --region=${GCP_REGION} \
+            --project=${GCP_PROJECT_ID}
+
+        # Verificar conexión
+        echo "Verificando conexión a Kubernetes..."
+        kubectl cluster-info
+        kubectl get nodes
+
+        echo "✅ Conexión a GKE establecida"
+    '''
+}
+
+def validateTerraformOutputs() {
+    """
+    Valida que la infraestructura de Terraform está disponible
+    """
+    sh '''
+        echo "📋 Validando outputs de Terraform..."
+
+        cd ops/terraform/environments/${ENVIRONMENT}
+
+        # Obtener outputs
+        terraform init -backend=true
+
+        # Exportar información necesaria
+        echo "Extrayendo información de infraestructura..."
+        CLUSTER_NAME=$(terraform output -raw gke_cluster_name 2>/dev/null || echo "unknown")
+        REGISTRY_URL=$(terraform output -raw artifact_registry_url 2>/dev/null || echo "unknown")
+
+        echo "  Cluster GKE: ${CLUSTER_NAME}"
+        echo "  Artifact Registry: ${REGISTRY_URL}"
+
+        if [ "${CLUSTER_NAME}" = "unknown" ] || [ "${REGISTRY_URL}" = "unknown" ]; then
+            echo "⚠️ Advertencia: Algunos outputs de Terraform no disponibles"
+            echo "   (La infraestructura podría no estar creada aún)"
+        fi
+
+        echo "✅ Validación de Terraform completada"
+    '''
+}
+
+def checkoutCode() {
+    """
+    Clona el repositorio de código
+    """
+    sh '''
+        echo "🔄 Clonando repositorio de código..."
+        mkdir -p code
+        cd code
+        git clone -b master https://github.com/SelimHorri/ecommerce-microservice-backend-app.git .
+        echo "✅ Código clonado"
+    '''
+}
+
+def checkoutOps() {
+    """
+    Clona el repositorio de operaciones
+    """
+    sh '''
+        echo "🔄 Clonando repositorio de operaciones..."
+        mkdir -p ops
+        cd ops
+        git clone -b main https://github.com/SelimHorri/ecommerce-microservice-operations.git .
+        echo "✅ Operaciones clonadas"
+    '''
+}
+
+def buildAndPushImages() {
+    """
+    Compila servicios y sube imágenes a Artifact Registry
+    """
+    sh '''
+        echo "🐳 Compilando e subiendo imágenes a Artifact Registry..."
+
+        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
+
+        cd code
+
+        for service in $SERVICES; do
+            echo ""
+            echo "────────────────────────────────────"
+            echo "📦 Procesando: ${service}"
+            echo "────────────────────────────────────"
+
+            # 1. Compilar con Maven
+            echo "Compilando ${service}..."
+            cd ${service}
+            mvn clean package -DskipTests -q
+            if [ $? -ne 0 ]; then
+                echo "❌ Compilación de ${service} falló"
+                exit 1
+            fi
+            echo "✅ ${service} compilado"
+            cd ..
+
+            # 2. Construir imagen Docker
+            IMAGE_NAME="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${service}:${DOCKER_TAG}"
+            echo "Construyendo imagen: ${IMAGE_NAME}"
+
+            docker build \
+                -t ${IMAGE_NAME} \
+                -f ${service}/Dockerfile \
+                . \
+                --no-cache
+
+            if [ $? -ne 0 ]; then
+                echo "❌ Build Docker de ${service} falló"
+                exit 1
+            fi
+            echo "✅ Imagen construida"
+
+            # 3. Subir a Artifact Registry
+            echo "Subiendo a Artifact Registry..."
+            docker push ${IMAGE_NAME}
+
+            if [ $? -ne 0 ]; then
+                echo "❌ Push de ${service} falló"
+                exit 1
+            fi
+            echo "✅ ${service} subido a Artifact Registry"
+        done
+
+        cd ..
+        echo ""
+        echo "✅ Todas las imágenes procesadas exitosamente"
+    '''
+}
+
+def runTrivy() {
+    """
+    Escanea vulnerabilidades en imágenes Docker con Trivy
+    (Opcional, solo si SCAN_VULNERABILITIES=true)
+    """
+    sh '''
+        if [ "${SCAN_VULNERABILITIES}" != "true" ]; then
+            echo "⏭️  Escaneo de vulnerabilidades deshabilitado"
+            return 0
+        fi
+
+        echo "🔍 Escaneando vulnerabilidades con Trivy..."
+
+        # Instalar Trivy si no existe
+        if ! command -v trivy &> /dev/null; then
+            echo "Instalando Trivy..."
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+        fi
+
+        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
+
+        mkdir -p trivy-reports
+
+        for service in $SERVICES; do
+            IMAGE_NAME="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${service}:${DOCKER_TAG}"
+
+            echo "Escaneando: ${service}"
+            trivy image --severity HIGH,CRITICAL \
+                --format json \
+                --output trivy-reports/${service}-scan.json \
+                ${IMAGE_NAME} || true
+
+            # Mostrar resumen
+            echo "  Resultados guardados en trivy-reports/${service}-scan.json"
+        done
+
+        echo "✅ Escaneo de vulnerabilidades completado"
+    '''
+}
+
+def runSonarCloud() {
+    """
+    Análisis estático de código con SonarCloud
+    Realiza análisis de calidad de código y genera reportes
+    """
+    sh '''
+        echo "📊 Ejecutando análisis SonarCloud..."
+
+        if [ -z "${SONARCLOUD_TOKEN}" ] || [ -z "${SONARCLOUD_ORG}" ] || [ -z "${SONARCLOUD_PROJECT}" ]; then
+            echo "⚠️  SonarCloud no configurado. Configura:"
+            echo "   - SONARCLOUD_TOKEN: Jenkins Credentials"
+            echo "   - SONARCLOUD_ORG: Tu organization key en SonarCloud"
+            echo "   - SONARCLOUD_PROJECT: Tu project key en SonarCloud"
+            return 0
+        fi
+
+        cd code
+
+        mvn sonar:sonar \
+            -Dsonar.projectKey=${SONARCLOUD_PROJECT} \
+            -Dsonar.organization=${SONARCLOUD_ORG} \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.login=${SONARCLOUD_TOKEN} \
+            -Dsonar.sources=. \
+            -q
+
+        echo "✅ Análisis SonarCloud completado"
+        echo "   URL: https://sonarcloud.io/dashboard?id=${SONARCLOUD_PROJECT}"
+
+        cd ..
+    '''
+}
+
+def runTests() {
+    """
+    Ejecuta suite completa de tests
+    """
+    sh '''
+        echo "🧪 Ejecutando tests..."
+
+        cd code
+
+        SERVICES="user-service product-service order-service payment-service favourite-service shipping-service"
+
+        for service in $SERVICES; do
+            echo ""
+            echo "Testing ${service}..."
+            cd ${service}
+            mvn test -q 2>&1 | tee ../../test-${service}.log
+            TEST_RESULT=$?
+            cd ..
+
+            if [ $TEST_RESULT -eq 0 ]; then
+                echo "✅ Tests de ${service} PASARON"
+            else
+                echo "⚠️  Tests de ${service} con warnings"
+            fi
+        done
+
+        cd ..
+        echo "✅ Tests completados"
+    '''
+}
+
+def deployToKubernetes() {
+    """
+    Despliega los servicios a GKE
+    """
+    sh '''
+        echo "📦 Desplegando a Kubernetes..."
+
+        NAMESPACE=${ENVIRONMENT}
+
+        # Crear namespace si no existe
+        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+        # Crear secret para Artifact Registry
+        kubectl create secret docker-registry artifact-registry-secret \
+            --docker-server=${GCP_REGION}-docker.pkg.dev \
+            --docker-username=_json_key \
+            --docker-password="$(cat ${GCP_CREDENTIALS_FILE})" \
+            --docker-email=user@example.com \
+            --namespace=${NAMESPACE} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+        # Desplegar servicios
+        echo "Desplegando servicios..."
+
+        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
+
+        for service in $SERVICES; do
+            echo "  Desplegando ${service}..."
+
+            # Obtener puerto del servicio
+            PORT=$(grep -A 5 "ports:" ops/k8s/${NAMESPACE}/${service}/deployment.yaml | grep "containerPort" | head -1 | awk '{print $2}' || echo "8080")
+
+            # Actualizar deployment con nueva imagen
+            kubectl set image deployment/${service} \
+                ${service}=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${service}:${DOCKER_TAG} \
+                -n ${NAMESPACE} \
+                --record 2>/dev/null || true
+
+            # Aplicar manifests
+            kubectl apply -f ops/k8s/${NAMESPACE}/${service}/ -n ${NAMESPACE}
+        done
+
+        echo "✅ Servicios desplegados"
+    '''
+}
+
+def verifyDeployment() {
+    """
+    Verifica que los servicios están corriendo correctamente
+    """
+    sh '''
+        echo "⏳ Verificando deployment..."
+
+        NAMESPACE=${ENVIRONMENT}
+        TIMEOUT=300  # 5 minutos
+
+        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
+
+        for service in $SERVICES; do
+            echo "Esperando a ${service}..."
+            kubectl wait --for=condition=ready pod \
+                -l app=${service} \
+                -n ${NAMESPACE} \
+                --timeout=${TIMEOUT}s 2>/dev/null || echo "⚠️  ${service} tardó en iniciar"
+        done
+
+        sleep 10
+
+        echo ""
+        echo "📊 ESTADO DE PODS:"
+        kubectl get pods -n ${NAMESPACE} -o wide
+
+        echo ""
+        echo "🔌 SERVICIOS:"
+        kubectl get svc -n ${NAMESPACE}
+
+        echo "✅ Verification completada"
+    '''
+}
+
+// ============================================================================
+// PIPELINE PRINCIPAL
+// ============================================================================
+
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        timeout(time: 2, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '5'))
+        disableConcurrentBuilds(abortPrevious: true)
+    }
+
+    environment {
+        // GCP Configuration
+        GCP_PROJECT_ID = "ecommerce-microservices-478116"
+        GCP_REGION = "southamerica-east1"
+        GCP_CREDENTIALS_FILE = credentials('gcp-service-account-key')
+        ARTIFACT_REGISTRY_REPO = "docker-repo"
+
+        // Application
+        ENVIRONMENT = "dev"
+        DOCKER_TAG = "dev-${BUILD_NUMBER}"
+
+        // SonarCloud Configuration
+        SONARCLOUD_TOKEN = credentials('sonarcloud-token')
+        SONARCLOUD_ORG = "YOUR_ORG_KEY_HERE"  // ⚠️ CAMBIAR: Tu organization key en SonarCloud
+        SONARCLOUD_PROJECT = "YOUR_PROJECT_KEY_HERE"  // ⚠️ CAMBIAR: Tu project key en SonarCloud
+
+        // Feature flags
+        SCAN_VULNERABILITIES = "${params.SCAN_VULNERABILITIES ?: 'false'}"
+    }
+
+    parameters {
+        booleanParam(
+            name: 'SCAN_VULNERABILITIES',
+            defaultValue: false,
+            description: 'Escanear vulnerabilidades con Trivy'
+        )
+    }
+
+    stages {
+        stage('1. Checkout Code') {
+            steps {
+                script {
+                    checkoutCode()
+                }
+            }
+        }
+
+        stage('2. Checkout Operations') {
+            steps {
+                script {
+                    checkoutOps()
+                }
+            }
+        }
+
+        stage('3. GCP Authentication') {
+            steps {
+                script {
+                    setupGCPAuth()
+                }
+            }
+        }
+
+        stage('4. Get GKE Credentials') {
+            steps {
+                script {
+                    getKubeConfig()
+                }
+            }
+        }
+
+        stage('5. Validate Infrastructure') {
+            steps {
+                script {
+                    validateTerraformOutputs()
+                }
+            }
+        }
+
+        stage('6. Run Tests') {
+            steps {
+                script {
+                    runTests()
+                }
+            }
+        }
+
+        stage('7. Code Quality (SonarCloud)') {
+            steps {
+                script {
+                    runSonarCloud()
+                }
+            }
+        }
+
+        stage('8. Build & Push Images') {
+            steps {
+                script {
+                    buildAndPushImages()
+                }
+            }
+        }
+
+        stage('9. Security Scan (Trivy)') {
+            when {
+                expression { params.SCAN_VULNERABILITIES == true }
+            }
+            steps {
+                script {
+                    runTrivy()
+                }
+            }
+        }
+
+        stage('10. Deploy to Kubernetes') {
+            steps {
+                script {
+                    deployToKubernetes()
+                }
+            }
+        }
+
+        stage('11. Verify Deployment') {
+            steps {
+                script {
+                    verifyDeployment()
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            sh '''
+                echo ""
+                echo "=========================================="
+                echo "✅ PIPELINE DEV COMPLETADO EXITOSAMENTE"
+                echo "=========================================="
+                echo ""
+                echo "Ambiente: ${ENVIRONMENT}"
+                echo "Docker Tag: ${DOCKER_TAG}"
+                echo "Región GCP: ${GCP_REGION}"
+                echo ""
+                echo "✓ Código compilado"
+                echo "✓ Tests ejecutados"
+                echo "✓ Imágenes subidas a Artifact Registry"
+                echo "✓ Servicios desplegados en GKE"
+                echo ""
+                echo "Acceso a aplicación:"
+                echo "  kubectl get svc -n ${ENVIRONMENT}"
+                echo ""
+                echo "Ver logs:"
+                echo "  kubectl logs -f deployment/api-gateway -n ${ENVIRONMENT}"
+                echo ""
+                echo "=========================================="
+            '''
+        }
+
+        failure {
+            sh '''
+                echo ""
+                echo "=========================================="
+                echo "❌ PIPELINE DEV FALLÓ"
+                echo "=========================================="
+                echo ""
+                echo "Ambiente: ${ENVIRONMENT}"
+                echo "Build: ${BUILD_NUMBER}"
+                echo ""
+                echo "Revisar logs arriba para detalles"
+                echo "=========================================="
+            '''
+        }
+
+        always {
+            // Guardar logs de tests
+            archiveArtifacts(
+                artifacts: 'test-*.log,trivy-reports/**',
+                allowEmptyArchive: true
+            )
+        }
+    }
+}

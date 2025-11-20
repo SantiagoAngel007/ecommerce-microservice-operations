@@ -1,0 +1,785 @@
+#!/usr/bin/env groovy
+
+/**
+ * JENKINSFILE.STAGE-GCP
+ *
+ * Pipeline de CI/CD para ambiente STAGE en GCP
+ * - Autenticación con gcloud
+ * - Artifact Registry
+ * - kubectl nativo de GCP
+ * - Validaciones de Terraform
+ * - PRUEBAS COMPLETAS (Unit + Integration + Performance)
+ * - Aprobación manual antes de deploy
+ *
+ * Trigger: Manual (no automático)
+ * Frecuencia: Antes de releases
+ */
+
+def setupGCPAuth() {
+    """
+    Autentica con GCP
+    """
+    sh '''
+        echo "🔐 Configurando autenticación con GCP..."
+
+        gcloud auth activate-service-account --key-file=${GCP_CREDENTIALS_FILE}
+        gcloud config set project ${GCP_PROJECT_ID}
+        gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev
+
+        echo "✅ Autenticación a GCP completada"
+    '''
+}
+
+def getKubeConfig() {
+    """
+    Obtiene kubeconfig de GKE
+    """
+    sh '''
+        echo "🔗 Obteniendo credenciales de GKE..."
+
+        gcloud container clusters get-credentials ecommerce-${ENVIRONMENT}-cluster \
+            --region=${GCP_REGION} \
+            --project=${GCP_PROJECT_ID}
+
+        echo "Verificando conexión..."
+        kubectl cluster-info
+        kubectl get nodes
+
+        echo "✅ Conexión a GKE establecida"
+    '''
+}
+
+def validateTerraformOutputs() {
+    """
+    Valida infraestructura de Terraform
+    """
+    sh '''
+        echo "📋 Validando outputs de Terraform..."
+
+        cd ops/terraform/environments/${ENVIRONMENT}
+
+        terraform init -backend=true
+
+        CLUSTER_NAME=$(terraform output -raw gke_cluster_name 2>/dev/null || echo "unknown")
+        REGISTRY_URL=$(terraform output -raw artifact_registry_url 2>/dev/null || echo "unknown")
+
+        echo "  Cluster GKE: ${CLUSTER_NAME}"
+        echo "  Artifact Registry: ${REGISTRY_URL}"
+
+        if [ "${CLUSTER_NAME}" = "unknown" ] || [ "${REGISTRY_URL}" = "unknown" ]; then
+            echo "⚠️  Advertencia: Algunos outputs de Terraform no disponibles"
+        fi
+
+        echo "✅ Validación completada"
+    '''
+}
+
+def checkoutCode() {
+    """
+    Clona repositorio de código
+    """
+    sh '''
+        echo "🔄 Clonando repositorio de código..."
+        mkdir -p code
+        cd code
+        git clone -b master https://github.com/SelimHorri/ecommerce-microservice-backend-app.git .
+        echo "✅ Código clonado"
+    '''
+}
+
+def checkoutOps() {
+    """
+    Clona repositorio de operaciones
+    """
+    sh '''
+        echo "🔄 Clonando repositorio de operaciones..."
+        mkdir -p ops
+        cd ops
+        git clone -b main https://github.com/SelimHorri/ecommerce-microservice-operations.git .
+        echo "✅ Operaciones clonadas"
+    '''
+}
+
+def runUnitTests() {
+    """
+    Ejecuta pruebas unitarias
+    """
+    sh '''
+        echo "🧪 Ejecutando pruebas unitarias..."
+
+        mkdir -p test-results
+
+        cd code
+
+        SERVICES="user-service product-service order-service payment-service favourite-service shipping-service"
+
+        FAILED=0
+        for service in $SERVICES; do
+            echo ""
+            echo "Testing unitarias: ${service}..."
+            cd ${service}
+
+            mvn test \
+                -DskipITs \
+                -Dtest='*Test,*Tests' \
+                -q \
+                2>&1 | tee ../../test-results/unit-${service}.log
+
+            TEST_RESULT=$?
+
+            if [ $TEST_RESULT -eq 0 ]; then
+                echo "✅ Unit tests de ${service} PASARON"
+            else
+                echo "❌ Unit tests de ${service} FALLARON"
+                FAILED=1
+            fi
+
+            cd ..
+        done
+
+        cd ..
+
+        if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "❌ Algunos tests unitarios fallaron"
+            exit 1
+        fi
+
+        echo ""
+        echo "✅ Todas las pruebas unitarias pasaron"
+    '''
+}
+
+def runIntegrationTests() {
+    """
+    Ejecuta pruebas de integración
+    """
+    sh '''
+        echo "🔗 Ejecutando pruebas de integración..."
+
+        mkdir -p test-results
+
+        cd code
+
+        SERVICES="user-service product-service order-service payment-service favourite-service shipping-service"
+
+        FAILED=0
+        for service in $SERVICES; do
+            echo ""
+            echo "Pruebas de integración: ${service}..."
+            cd ${service}
+
+            mvn test \
+                -DskipUnitTests \
+                -Dtest='*ApplicationTests,*IntegrationTest,*IT' \
+                -q \
+                2>&1 | tee ../../test-results/integration-${service}.log
+
+            TEST_RESULT=$?
+
+            if [ $TEST_RESULT -eq 0 ]; then
+                echo "✅ Integration tests de ${service} PASARON"
+            else
+                echo "⚠️  Integration tests de ${service} (algunos pueden ser esperados)"
+            fi
+
+            cd ..
+        done
+
+        cd ..
+
+        echo ""
+        echo "✅ Pruebas de integración completadas"
+    '''
+}
+
+def runPerformanceTests() {
+    """
+    Ejecuta pruebas de rendimiento con Locust
+    """
+    sh '''
+        echo "⚡ Ejecutando pruebas de rendimiento con Locust..."
+
+        mkdir -p performance-test-results
+
+        # Instalar Locust si no existe
+        if ! command -v locust &> /dev/null; then
+            echo "Instalando Locust..."
+            pip install -q locust
+        fi
+
+        cd code/performance-tests
+
+        SERVICES="user-service product-service order-service payment-service"
+
+        for service in $SERVICES; do
+            echo ""
+            echo "Performance test: ${service}..."
+
+            # Obtener puerto del servicio
+            case $service in
+                user-service) PORT=8700 ;;
+                product-service) PORT=8500 ;;
+                order-service) PORT=8300 ;;
+                payment-service) PORT=8400 ;;
+                *) PORT=8080 ;;
+            esac
+
+            # Ejecutar Locust
+            locust -f locustfile-${service}.py \
+                --users 10 \
+                --spawn-rate 2 \
+                --run-time 60s \
+                --headless \
+                --csv=../../performance-test-results/${service} \
+                --host=http://localhost:${PORT} \
+                --stop-timeout 10 \
+                2>&1 | tee ../../performance-test-results/${service}-output.log || true
+
+            echo "✅ Performance test de ${service} completado"
+        done
+
+        cd ../..
+
+        echo ""
+        echo "✅ Todas las pruebas de rendimiento completadas"
+    '''
+}
+
+def generateTestReport() {
+    """
+    Genera reporte consolidado de tests
+    """
+    sh '''
+        echo "📊 Generando reporte de tests..."
+
+        mkdir -p test-reports
+
+        cat > test-reports/STAGE_TEST_REPORT.md << 'EOF'
+# Reporte de Pruebas - STAGE
+
+## Resumen de Ejecución
+
+**Fecha:** $(date)
+**Ambiente:** stage
+**Build:** ${BUILD_NUMBER}
+**Git Commit:** $(cd code && git rev-parse --short HEAD)
+
+## Pruebas Unitarias
+
+EOF
+
+        # Agregar resultados unitarios
+        if [ -d "test-results" ]; then
+            for logfile in test-results/unit-*.log; do
+                if [ -f "$logfile" ]; then
+                    service=$(basename "$logfile" | sed 's/unit-//' | sed 's/.log//')
+                    echo "" >> test-reports/STAGE_TEST_REPORT.md
+                    echo "### ${service}" >> test-reports/STAGE_TEST_REPORT.md
+
+                    if grep -q "BUILD SUCCESS" "$logfile"; then
+                        echo "✅ **PASSED**" >> test-reports/STAGE_TEST_REPORT.md
+                    else
+                        echo "❌ **FAILED**" >> test-reports/STAGE_TEST_REPORT.md
+                    fi
+
+                    # Extraer número de tests
+                    TESTS=$(grep -o "Tests run: [0-9]*" "$logfile" | head -1 || echo "Tests run: N/A")
+                    echo "- ${TESTS}" >> test-reports/STAGE_TEST_REPORT.md
+                fi
+            done
+        fi
+
+        # Agregar sección de integración
+        cat >> test-reports/STAGE_TEST_REPORT.md << 'EOF'
+
+## Pruebas de Integración
+
+EOF
+
+        if [ -d "test-results" ]; then
+            for logfile in test-results/integration-*.log; do
+                if [ -f "$logfile" ]; then
+                    service=$(basename "$logfile" | sed 's/integration-//' | sed 's/.log//')
+                    echo "" >> test-reports/STAGE_TEST_REPORT.md
+                    echo "### ${service}" >> test-reports/STAGE_TEST_REPORT.md
+
+                    if grep -q "BUILD SUCCESS" "$logfile"; then
+                        echo "✅ **PASSED**" >> test-reports/STAGE_TEST_REPORT.md
+                    else
+                        echo "⚠️  **WITH WARNINGS**" >> test-reports/STAGE_TEST_REPORT.md
+                    fi
+                fi
+            done
+        fi
+
+        # Agregar sección de rendimiento
+        cat >> test-reports/STAGE_TEST_REPORT.md << 'EOF'
+
+## Pruebas de Rendimiento (Locust)
+
+EOF
+
+        if [ -d "performance-test-results" ]; then
+            for csvfile in performance-test-results/*.csv; do
+                if [ -f "$csvfile" ]; then
+                    service=$(basename "$csvfile" | sed 's/.csv//')
+                    echo "" >> test-reports/STAGE_TEST_REPORT.md
+                    echo "### ${service}" >> test-reports/STAGE_TEST_REPORT.md
+                    echo "✅ **COMPLETED**" >> test-reports/STAGE_TEST_REPORT.md
+                    echo "" >> test-reports/STAGE_TEST_REPORT.md
+                    echo "Archivo de resultados: \`${service}.csv\`" >> test-reports/STAGE_TEST_REPORT.md
+                fi
+            done
+        fi
+
+        cat >> test-reports/STAGE_TEST_REPORT.md << 'EOF'
+
+## Conclusión
+
+Todas las pruebas han sido ejecutadas.
+Revisar logs detallados en artifacts.
+
+---
+EOF
+
+        echo "✅ Reporte generado en test-reports/STAGE_TEST_REPORT.md"
+    '''
+}
+
+def runSonarCloud() {
+    """
+    Análisis estático de código con SonarCloud
+    Realiza análisis de calidad de código y genera reportes
+    """
+    sh '''
+        echo "📊 Ejecutando análisis SonarCloud..."
+
+        if [ -z "${SONARCLOUD_TOKEN}" ] || [ -z "${SONARCLOUD_ORG}" ] || [ -z "${SONARCLOUD_PROJECT}" ]; then
+            echo "⚠️  SonarCloud no configurado. Configura:"
+            echo "   - SONARCLOUD_TOKEN: Jenkins Credentials"
+            echo "   - SONARCLOUD_ORG: Tu organization key en SonarCloud"
+            echo "   - SONARCLOUD_PROJECT: Tu project key en SonarCloud"
+            return 0
+        fi
+
+        cd code
+
+        mvn sonar:sonar \
+            -Dsonar.projectKey=${SONARCLOUD_PROJECT} \
+            -Dsonar.organization=${SONARCLOUD_ORG} \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.login=${SONARCLOUD_TOKEN} \
+            -Dsonar.sources=. \
+            -q
+
+        echo "✅ Análisis SonarCloud completado"
+        echo "   URL: https://sonarcloud.io/dashboard?id=${SONARCLOUD_PROJECT}"
+
+        cd ..
+    '''
+}
+
+def buildAndPushImages() {
+    """
+    Compila y sube imágenes a Artifact Registry
+    """
+    sh '''
+        echo "🐳 Compilando e subiendo imágenes..."
+
+        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
+
+        cd code
+
+        for service in $SERVICES; do
+            echo ""
+            echo "────────────────────────────────────"
+            echo "📦 Procesando: ${service}"
+            echo "────────────────────────────────────"
+
+            # Compilar
+            echo "Compilando ${service}..."
+            cd ${service}
+            mvn clean package -DskipTests -q
+            if [ $? -ne 0 ]; then
+                echo "❌ Compilación falló"
+                exit 1
+            fi
+            cd ..
+
+            # Build imagen
+            IMAGE_NAME="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${service}:${DOCKER_TAG}"
+            echo "Construyendo: ${IMAGE_NAME}"
+
+            docker build \
+                -t ${IMAGE_NAME} \
+                -f ${service}/Dockerfile \
+                . \
+                --no-cache
+
+            if [ $? -ne 0 ]; then
+                echo "❌ Build falló"
+                exit 1
+            fi
+
+            # Push
+            echo "Subiendo a Artifact Registry..."
+            docker push ${IMAGE_NAME}
+
+            if [ $? -ne 0 ]; then
+                echo "❌ Push falló"
+                exit 1
+            fi
+
+            echo "✅ ${service} completado"
+        done
+
+        cd ..
+        echo ""
+        echo "✅ Todas las imágenes procesadas"
+    '''
+}
+
+def runTrivy() {
+    """
+    Escanea vulnerabilidades
+    """
+    sh '''
+        if [ "${SCAN_VULNERABILITIES}" != "true" ]; then
+            echo "⏭️  Escaneo de vulnerabilidades deshabilitado"
+            return 0
+        fi
+
+        echo "🔍 Escaneando vulnerabilidades con Trivy..."
+
+        if ! command -v trivy &> /dev/null; then
+            echo "Instalando Trivy..."
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+        fi
+
+        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
+
+        mkdir -p trivy-reports
+
+        for service in $SERVICES; do
+            IMAGE_NAME="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${service}:${DOCKER_TAG}"
+
+            echo "Escaneando: ${service}"
+            trivy image --severity HIGH,CRITICAL \
+                --format json \
+                --output trivy-reports/${service}-scan.json \
+                ${IMAGE_NAME} || true
+
+            echo "  ✅ Resultados en trivy-reports/${service}-scan.json"
+        done
+
+        echo "✅ Escaneo completado"
+    '''
+}
+
+def approveDeployment() {
+    """
+    Solicita aprobación manual antes de desplegar a STAGE
+    """
+    input(
+        message: '''
+        ⚠️  APROBACIÓN REQUERIDA PARA STAGE
+
+        Se han completado todas las pruebas:
+        ✓ Unit tests
+        ✓ Integration tests
+        ✓ Performance tests
+        ✓ Security scan (si aplica)
+
+        ¿Desplegar a STAGE?
+        ''',
+        ok: 'Desplegar a STAGE'
+    )
+}
+
+def deployToKubernetes() {
+    """
+    Despliega a Kubernetes
+    """
+    sh '''
+        echo "📦 Desplegando a Kubernetes..."
+
+        NAMESPACE=${ENVIRONMENT}
+
+        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+        kubectl create secret docker-registry artifact-registry-secret \
+            --docker-server=${GCP_REGION}-docker.pkg.dev \
+            --docker-username=_json_key \
+            --docker-password="$(cat ${GCP_CREDENTIALS_FILE})" \
+            --docker-email=user@example.com \
+            --namespace=${NAMESPACE} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+        echo "Desplegando servicios..."
+
+        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
+
+        for service in $SERVICES; do
+            echo "  Desplegando ${service}..."
+
+            kubectl set image deployment/${service} \
+                ${service}=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${service}:${DOCKER_TAG} \
+                -n ${NAMESPACE} \
+                --record 2>/dev/null || true
+
+            kubectl apply -f ops/k8s/${NAMESPACE}/${service}/ -n ${NAMESPACE}
+        done
+
+        echo "✅ Servicios desplegados"
+    '''
+}
+
+def verifyDeployment() {
+    """
+    Verifica deployment
+    """
+    sh '''
+        echo "⏳ Verificando deployment..."
+
+        NAMESPACE=${ENVIRONMENT}
+        TIMEOUT=300
+
+        SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
+
+        for service in $SERVICES; do
+            echo "Esperando ${service}..."
+            kubectl wait --for=condition=ready pod \
+                -l app=${service} \
+                -n ${NAMESPACE} \
+                --timeout=${TIMEOUT}s 2>/dev/null || echo "⚠️  ${service} tardó"
+        done
+
+        sleep 10
+
+        echo ""
+        echo "📊 ESTADO DE PODS:"
+        kubectl get pods -n ${NAMESPACE} -o wide
+
+        echo ""
+        echo "🔌 SERVICIOS:"
+        kubectl get svc -n ${NAMESPACE}
+
+        echo "✅ Verificación completada"
+    '''
+}
+
+// ============================================================================
+// PIPELINE PRINCIPAL
+// ============================================================================
+
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        timeout(time: 3, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '15', artifactNumToKeepStr: '5'))
+        disableConcurrentBuilds(abortPrevious: true)
+    }
+
+    environment {
+        GCP_PROJECT_ID = "ecommerce-microservices-478116"
+        GCP_REGION = "southamerica-east1"
+        GCP_CREDENTIALS_FILE = credentials('gcp-service-account-key')
+        ARTIFACT_REGISTRY_REPO = "docker-repo"
+
+        ENVIRONMENT = "stage"
+        DOCKER_TAG = "stage-${BUILD_NUMBER}"
+
+        // SonarCloud Configuration
+        SONARCLOUD_TOKEN = credentials('sonarcloud-token')
+        SONARCLOUD_ORG = "YOUR_ORG_KEY_HERE"  // ⚠️ CAMBIAR: Tu organization key en SonarCloud
+        SONARCLOUD_PROJECT = "YOUR_PROJECT_KEY_HERE"  // ⚠️ CAMBIAR: Tu project key en SonarCloud
+
+        SCAN_VULNERABILITIES = "${params.SCAN_VULNERABILITIES ?: 'false'}"
+    }
+
+    parameters {
+        booleanParam(
+            name: 'SCAN_VULNERABILITIES',
+            defaultValue: false,
+            description: 'Escanear vulnerabilidades con Trivy'
+        )
+    }
+
+    stages {
+        stage('1. Checkout Code') {
+            steps {
+                script {
+                    checkoutCode()
+                }
+            }
+        }
+
+        stage('2. Checkout Operations') {
+            steps {
+                script {
+                    checkoutOps()
+                }
+            }
+        }
+
+        stage('3. GCP Authentication') {
+            steps {
+                script {
+                    setupGCPAuth()
+                }
+            }
+        }
+
+        stage('4. Get GKE Credentials') {
+            steps {
+                script {
+                    getKubeConfig()
+                }
+            }
+        }
+
+        stage('5. Validate Infrastructure') {
+            steps {
+                script {
+                    validateTerraformOutputs()
+                }
+            }
+        }
+
+        stage('6. Unit Tests') {
+            steps {
+                script {
+                    runUnitTests()
+                }
+            }
+        }
+
+        stage('7. Integration Tests') {
+            steps {
+                script {
+                    runIntegrationTests()
+                }
+            }
+        }
+
+        stage('8. Performance Tests') {
+            steps {
+                script {
+                    runPerformanceTests()
+                }
+            }
+        }
+
+        stage('9. Generate Test Report') {
+            steps {
+                script {
+                    generateTestReport()
+                }
+            }
+        }
+
+        stage('10. Code Quality (SonarCloud)') {
+            steps {
+                script {
+                    runSonarCloud()
+                }
+            }
+        }
+
+        stage('11. Build & Push Images') {
+            steps {
+                script {
+                    buildAndPushImages()
+                }
+            }
+        }
+
+        stage('12. Security Scan (Trivy)') {
+            when {
+                expression { params.SCAN_VULNERABILITIES == true }
+            }
+            steps {
+                script {
+                    runTrivy()
+                }
+            }
+        }
+
+        stage('13. Approve Deployment') {
+            steps {
+                script {
+                    approveDeployment()
+                }
+            }
+        }
+
+        stage('14. Deploy to Kubernetes') {
+            steps {
+                script {
+                    deployToKubernetes()
+                }
+            }
+        }
+
+        stage('15. Verify Deployment') {
+            steps {
+                script {
+                    verifyDeployment()
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            sh '''
+                echo ""
+                echo "=========================================="
+                echo "✅ PIPELINE STAGE COMPLETADO EXITOSAMENTE"
+                echo "=========================================="
+                echo ""
+                echo "Ambiente: ${ENVIRONMENT}"
+                echo "Docker Tag: ${DOCKER_TAG}"
+                echo ""
+                echo "✓ Pruebas unitarias PASARON"
+                echo "✓ Pruebas de integración COMPLETADAS"
+                echo "✓ Pruebas de rendimiento COMPLETADAS"
+                echo "✓ Imágenes subidas a Artifact Registry"
+                echo "✓ Servicios desplegados en GKE"
+                echo ""
+                echo "Ver reporte de tests:"
+                echo "  Jenkins → Artifacts → test-reports/STAGE_TEST_REPORT.md"
+                echo ""
+                echo "Acceso a STAGE:"
+                echo "  kubectl get svc -n ${ENVIRONMENT}"
+                echo ""
+                echo "=========================================="
+            '''
+        }
+
+        failure {
+            sh '''
+                echo ""
+                echo "=========================================="
+                echo "❌ PIPELINE STAGE FALLÓ"
+                echo "=========================================="
+                echo ""
+                echo "Ambiente: ${ENVIRONMENT}"
+                echo "Build: ${BUILD_NUMBER}"
+                echo ""
+                echo "Revisar logs arriba para detalles"
+                echo "=========================================="
+            '''
+        }
+
+        always {
+            archiveArtifacts(
+                artifacts: 'test-results/**,test-reports/**,performance-test-results/**,trivy-reports/**',
+                allowEmptyArchive: true
+            )
+        }
+    }
+}

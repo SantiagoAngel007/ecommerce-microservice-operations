@@ -1,0 +1,560 @@
+#!/usr/bin/env groovy
+
+/**
+ * JENKINSFILE.INFRASTRUCTURE
+ *
+ * Propósito: Gestionar infraestructura en GCP usando Terraform
+ * Frecuencia: MANUAL (No automático)
+ * Trigger: Manualmente por DevOps Engineer
+ *
+ * ⚠️ CRÍTICO: Este pipeline modifica infraestructura en GCP
+ * - Requiere aprobación manual antes de aplicar cambios
+ * - Todos los cambios se registran para auditoría
+ * - Prod requiere doble confirmación
+ */
+
+def setupGCloud() {
+    """
+    Configura autenticación con GCP usando credenciales de Jenkins
+    """
+    sh '''
+        # Autenticar con GCP usando service account
+        gcloud auth activate-service-account --key-file=${GCP_CREDENTIALS_FILE}
+
+        # Establecer proyecto
+        gcloud config set project ${GCP_PROJECT_ID}
+
+        # Verificar autenticación
+        echo "✅ Autenticación a GCP exitosa"
+        gcloud auth list
+        gcloud config list
+    '''
+}
+
+def validateTerraform(String environment) {
+    """
+    Valida la configuración de Terraform
+    """
+    sh '''
+        echo "🔍 Validando configuración de Terraform para ${ENVIRONMENT}..."
+        cd ops/terraform/environments/${ENVIRONMENT}
+
+        # Validar sintaxis
+        terraform fmt -check -recursive . || {
+            echo "⚠️ Archivos Terraform mal formateados. Ejecutando auto-format..."
+            terraform fmt -recursive .
+        }
+
+        # Validar configuración
+        terraform validate || {
+            echo "❌ Validación de Terraform falló"
+            exit 1
+        }
+
+        echo "✅ Validación de Terraform exitosa"
+    '''
+}
+
+def planTerraform(String environment) {
+    """
+    Genera plan de cambios sin aplicarlos
+    Guarda el plan para ejecución posterior
+    """
+    sh '''
+        echo "📋 Generando plan de Terraform para ${ENVIRONMENT}..."
+        cd ops/terraform/environments/${ENVIRONMENT}
+
+        # Inicializar (con backend remoto en GCS)
+        echo "Inicializando Terraform..."
+        terraform init -upgrade
+
+        # Generar plan
+        echo "Creando plan de cambios..."
+        terraform plan \
+            -lock=false \
+            -out=tfplan \
+            -input=false \
+            2>&1 | tee plan-output.txt
+
+        # Guardar plan en texto para revisión
+        echo "Generando resumen del plan..."
+        terraform show tfplan > tfplan-output.txt
+
+        echo "✅ Plan generado exitosamente"
+
+        # Mostrar cambios
+        echo ""
+        echo "📊 RESUMEN DE CAMBIOS DETECTADOS:"
+        echo "=================================="
+        grep -E "Plan:|resource|module" plan-output.txt || echo "Sin cambios"
+    '''
+}
+
+def showPlanChanges(String environment) {
+    """
+    Muestra un resumen visual de los cambios
+    """
+    sh '''
+        echo ""
+        echo "📋 CAMBIOS PROPUESTOS PARA ${ENVIRONMENT}:"
+        echo "============================================"
+
+        cd ops/terraform/environments/${ENVIRONMENT}
+
+        # Extraer información del plan
+        if [ -f "plan-output.txt" ]; then
+            echo ""
+            echo "Recursos que serán creados/modificados/destruidos:"
+            grep -E "^  # |to update|to create|to destroy|No changes|Outputs:" plan-output.txt || true
+        fi
+
+        # Mostrar variables usadas
+        echo ""
+        echo "Variables de ambiente:"
+        echo "  Proyecto: ${GCP_PROJECT_ID}"
+        echo "  Ambiente: ${ENVIRONMENT}"
+        echo "  Región: ${GCP_REGION}"
+
+        if [ -f "terraform.tfvars" ]; then
+            echo ""
+            echo "Configuración específica del ambiente:"
+            cat terraform.tfvars | grep -v "^#" | grep -v "^$"
+        fi
+    '''
+}
+
+def approveApply(String environment) {
+    """
+    Solicita aprobación manual antes de aplicar cambios
+    Para prod requiere confirmación adicional
+    """
+    def message = """
+    ⚠️  APROBACIÓN REQUERIDA
+
+    Ambiente: ${environment.toUpperCase()}
+    Proyecto: ${GCP_PROJECT_ID}
+    Región: ${GCP_REGION}
+
+    Se han detectado cambios en la infraestructura.
+
+    Revisar el plan arriba antes de aprobar.
+    """
+
+    if (environment == 'prod') {
+        message += """
+
+    🔴 ATENCIÓN: Cambios en PRODUCCIÓN
+    Esto afectará a usuarios en vivo.
+
+    ¿CONFIRMAS que quieres aplicar estos cambios?
+    """
+    }
+
+    input(
+        message: message,
+        ok: 'Aplicar cambios',
+        submitter: 'devops-team'
+    )
+}
+
+def applyTerraform(String environment) {
+    """
+    Aplica los cambios de Terraform
+    Usa el plan previamente generado
+    """
+    sh '''
+        echo "🚀 Aplicando cambios de Terraform a ${ENVIRONMENT}..."
+        cd ops/terraform/environments/${ENVIRONMENT}
+
+        # Aplicar usando el plan generado
+        terraform apply \
+            -lock=true \
+            -input=false \
+            tfplan
+
+        if [ $? -eq 0 ]; then
+            echo "✅ Terraform apply completado exitosamente"
+        else
+            echo "❌ Terraform apply falló"
+            exit 1
+        fi
+    '''
+}
+
+def destroyTerraform(String environment) {
+    """
+    Destruye toda la infraestructura
+    Requiere confirmación DOBLE
+    """
+    sh '''
+        echo "🗑️  DESTRUYENDO infraestructura de ${ENVIRONMENT}..."
+        cd ops/terraform/environments/${ENVIRONMENT}
+
+        # Confirmación adicional
+        echo ""
+        echo "⚠️  ÚLTIMA CONFIRMACIÓN: Se destruirá toda la infraestructura"
+        read -p "Escribe 'destroy' para confirmar: " CONFIRM
+
+        if [ "$CONFIRM" != "destroy" ]; then
+            echo "❌ Operación cancelada"
+            exit 1
+        fi
+
+        # Destroy
+        terraform destroy \
+            -lock=true \
+            -auto-approve \
+            -input=false
+
+        echo "✅ Infraestructura destruida"
+    '''
+}
+
+def exportOutputs(String environment) {
+    """
+    Exporta outputs de Terraform para uso en otros pipelines
+    Guarda como artifacts en Jenkins
+    """
+    sh '''
+        echo "📤 Exportando outputs de Terraform..."
+        cd ops/terraform/environments/${ENVIRONMENT}
+
+        # Exportar como JSON
+        terraform output -json > ${WORKSPACE}/terraform-outputs.json
+
+        # Exportar outputs importantes para Jenkins
+        echo "GKE_CLUSTER_NAME=$(terraform output -raw gke_cluster_name)" >> ${WORKSPACE}/terraform.env
+        echo "ARTIFACT_REGISTRY=$(terraform output -raw artifact_registry_url)" >> ${WORKSPACE}/terraform.env
+        echo "GCP_REGION=$(terraform output -raw region)" >> ${WORKSPACE}/terraform.env
+
+        echo "✅ Outputs exportados"
+        echo ""
+        echo "Outputs disponibles:"
+        terraform output
+    '''
+}
+
+def saveArtifacts() {
+    """
+    Guarda plan y logs para auditoría
+    """
+    sh '''
+        mkdir -p ${WORKSPACE}/infrastructure-artifacts
+
+        cd ops/terraform/environments/${ENVIRONMENT}
+
+        # Copiar files importantes
+        cp -f plan-output.txt ${WORKSPACE}/infrastructure-artifacts/ 2>/dev/null || true
+        cp -f tfplan-output.txt ${WORKSPACE}/infrastructure-artifacts/ 2>/dev/null || true
+        cp -f terraform.tfvars ${WORKSPACE}/infrastructure-artifacts/ 2>/dev/null || true
+
+        echo "✅ Artifacts guardados para auditoría"
+    '''
+}
+
+// ============================================================================
+// PIPELINE PRINCIPAL
+// ============================================================================
+
+pipeline {
+    agent any
+
+    // Opciones globales
+    options {
+        timestamps()
+        timeout(time: 1, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '10'))
+        disableConcurrentBuilds(abortPrevious: true)
+    }
+
+    // Variables de entorno
+    environment {
+        // GCP Configuration
+        GCP_PROJECT_ID = "ecommerce-microservices-478116"
+        GCP_REGION = "southamerica-east1"
+        GCP_CREDENTIALS_FILE = credentials('gcp-service-account-key')
+
+        // Terraform
+        TF_IN_AUTOMATION = "true"
+        TF_LOG = "INFO"
+        TF_LOG_PATH = "${WORKSPACE}/terraform.log"
+    }
+
+    // Parámetros para ejecutar
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'stage', 'prod'],
+            description: 'Ambiente a modificar (dev/stage/prod)'
+        )
+        choice(
+            name: 'ACTION',
+            choices: ['plan', 'apply', 'destroy'],
+            description: '''
+            plan:   Solo mostrar cambios (SIN aplicar)
+            apply:  Aplicar cambios después de aprobación
+            destroy: Eliminar toda la infraestructura
+            '''
+        )
+        booleanParam(
+            name: 'AUTO_APPROVE',
+            defaultValue: false,
+            description: 'Solo para DEV: Aprobar automáticamente sin intervención manual'
+        )
+        string(
+            name: 'EXTRA_VARS',
+            defaultValue: '',
+            description: 'Variables adicionales: -var="key=value" -var="key2=value2"'
+        )
+    }
+
+    stages {
+        stage('0. Validación de Permisos') {
+            steps {
+                script {
+                    echo "🔐 Validando permisos del usuario..."
+
+                    // En prod, requiere grupo específico
+                    if (params.ENVIRONMENT == 'prod') {
+                        def userInGroup = sh(
+                            script: 'id -Gn | grep -q "devops-team"',
+                            returnStatus: true
+                        ) == 0
+
+                        if (!userInGroup) {
+                            error("❌ Solo miembros de 'devops-team' pueden modificar PROD")
+                        }
+                    }
+
+                    echo "✅ Usuario tiene permisos para ${params.ENVIRONMENT}"
+                }
+            }
+        }
+
+        stage('1. Checkout') {
+            steps {
+                echo "🔄 Clonando repositorio de operaciones..."
+                checkout([$class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/SelimHorri/ecommerce-microservice-operations.git'
+                    ]]
+                ])
+
+                sh '''
+                    echo "✅ Repositorio clonado"
+                    pwd
+                    ls -la ops/terraform/environments/${ENVIRONMENT}/ 2>/dev/null || echo "⚠️ Directorio de ambiente no encontrado"
+                '''
+            }
+        }
+
+        stage('2. Setup GCP') {
+            steps {
+                script {
+                    setupGCloud()
+                }
+            }
+        }
+
+        stage('3. Validate Terraform') {
+            steps {
+                script {
+                    validateTerraform(params.ENVIRONMENT)
+                }
+            }
+        }
+
+        stage('4. Plan Terraform') {
+            steps {
+                script {
+                    planTerraform(params.ENVIRONMENT)
+                    showPlanChanges(params.ENVIRONMENT)
+                }
+            }
+        }
+
+        stage('5. Review Changes') {
+            when {
+                expression { params.ACTION == 'plan' }
+            }
+            steps {
+                echo "✅ Plan completado sin aplicar cambios"
+                echo ""
+                echo "Para aplicar estos cambios, ejecuta el pipeline nuevamente"
+                echo "con ACTION = 'apply'"
+            }
+        }
+
+        stage('6. Approve Apply') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    if (params.AUTO_APPROVE && params.ENVIRONMENT == 'dev') {
+                        echo "⏭️  Auto-aprobando para ambiente dev"
+                    } else {
+                        approveApply(params.ENVIRONMENT)
+                    }
+                }
+            }
+        }
+
+        stage('7. Apply Terraform') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                script {
+                    applyTerraform(params.ENVIRONMENT)
+                }
+            }
+        }
+
+        stage('8. Destroy Approval') {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                script {
+                    if (params.ENVIRONMENT == 'prod') {
+                        input(
+                            message: '''
+                            🔴 ATENCIÓN CRÍTICA: Destrucción de PRODUCCIÓN
+
+                            Esto eliminará TODA la infraestructura de producción:
+                            - GKE Cluster
+                            - Cloud SQL Database
+                            - VPC y Networking
+                            - Artifact Registry
+
+                            LOS DATOS NO PODRÁN RECUPERARSE.
+
+                            ¿Realmente quieres continuar?
+                            ''',
+                            ok: 'Sí, destruir PRODUCCIÓN',
+                            submitter: 'devops-team'
+                        )
+                    } else {
+                        input(
+                            message: '''
+                            ⚠️  Destrucción de infraestructura ${ENVIRONMENT}
+
+                            Se eliminarán todos los recursos.
+                            ¿Continuar?
+                            ''',
+                            ok: 'Sí, destruir',
+                            submitter: 'devops-team'
+                        )
+                    }
+                }
+            }
+        }
+
+        stage('9. Destroy Terraform') {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                script {
+                    destroyTerraform(params.ENVIRONMENT)
+                }
+            }
+        }
+
+        stage('10. Export Outputs') {
+            when {
+                expression { params.ACTION in ['apply', 'destroy'] }
+            }
+            steps {
+                script {
+                    exportOutputs(params.ENVIRONMENT)
+                }
+            }
+        }
+
+        stage('11. Archive Artifacts') {
+            steps {
+                script {
+                    saveArtifacts()
+
+                    archiveArtifacts(
+                        artifacts: 'infrastructure-artifacts/**,terraform-outputs.json,terraform.env,terraform.log',
+                        allowEmptyArchive: true,
+                        fingerprint: true
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            sh '''
+                echo ""
+                echo "=========================================="
+                echo "✅ PIPELINE DE INFRAESTRUCTURA COMPLETADO"
+                echo "=========================================="
+                echo ""
+                echo "Resumen:"
+                echo "  Ambiente: ${ENVIRONMENT}"
+                echo "  Acción: ${ACTION}"
+                echo "  Proyecto: ${GCP_PROJECT_ID}"
+                echo "  Región: ${GCP_REGION}"
+                echo ""
+
+                if [ -f "${WORKSPACE}/terraform.env" ]; then
+                    echo "Outputs disponibles:"
+                    cat ${WORKSPACE}/terraform.env
+                fi
+
+                echo ""
+                echo "Artifacts guardados para auditoría"
+                echo "=========================================="
+            '''
+        }
+
+        failure {
+            sh '''
+                echo ""
+                echo "=========================================="
+                echo "❌ PIPELINE DE INFRAESTRUCTURA FALLÓ"
+                echo "=========================================="
+                echo ""
+                echo "Ambiente: ${ENVIRONMENT}"
+                echo "Acción: ${ACTION}"
+                echo ""
+                echo "Revisar logs arriba para más detalles"
+                echo "=========================================="
+
+                # Guardar logs de Terraform para debugging
+                if [ -f "${TF_LOG_PATH}" ]; then
+                    echo ""
+                    echo "Logs de Terraform (últimas 50 líneas):"
+                    tail -50 ${TF_LOG_PATH}
+                fi
+            '''
+        }
+
+        always {
+            // Limpiar archivos sensibles
+            sh '''
+                # No guardar credenciales en artifacts
+                rm -f ${WORKSPACE}/credentials/* 2>/dev/null || true
+                rm -f ${GCP_CREDENTIALS_FILE} 2>/dev/null || true
+
+                # Guardar logs para debugging
+                if [ -f "${TF_LOG_PATH}" ]; then
+                    cp ${TF_LOG_PATH} ${WORKSPACE}/infrastructure-artifacts/terraform.log 2>/dev/null || true
+                fi
+            '''
+
+            // Notificar resultado
+            script {
+                def status = currentBuild.result ?: 'SUCCESS'
+                echo "📊 Resultado final: ${status}"
+            }
+        }
+    }
+}
