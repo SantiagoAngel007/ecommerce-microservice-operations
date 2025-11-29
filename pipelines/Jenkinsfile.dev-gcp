@@ -61,10 +61,14 @@ def validateTerraformOutputs() {
     sh '''
         echo "📋 Validando outputs de Terraform..."
 
+        # Copiar credenciales GCP al lugar esperado por Terraform
+        mkdir -p ops/terraform/credentials
+        cp "${GCP_CREDENTIALS_FILE}" ops/terraform/credentials/gcp-key.json
+
         cd ops/terraform/environments/${ENVIRONMENT}
 
         # Configurar credenciales para Terraform
-        export GOOGLE_APPLICATION_CREDENTIALS="${GCP_CREDENTIALS_FILE}"
+        export GOOGLE_APPLICATION_CREDENTIALS="../../credentials/gcp-key.json"
 
         # Inicializar Terraform
         terraform init -backend=true
