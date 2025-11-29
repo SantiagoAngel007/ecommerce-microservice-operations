@@ -63,20 +63,23 @@ def validateTerraformOutputs() {
 
         cd ops/terraform/environments/${ENVIRONMENT}
 
-        # Obtener outputs
+        # Configurar credenciales para Terraform
+        export GOOGLE_APPLICATION_CREDENTIALS="${GCP_CREDENTIALS_FILE}"
+
+        # Inicializar Terraform
         terraform init -backend=true
 
-        # Exportar información necesaria
+        # Obtener outputs
         echo "Extrayendo información de infraestructura..."
-        CLUSTER_NAME=$(terraform output -raw gke_cluster_name 2>/dev/null || echo "unknown")
-        REGISTRY_URL=$(terraform output -raw artifact_registry_url 2>/dev/null || echo "unknown")
+        CLUSTER_NAME=$(terraform output -raw gke_cluster_name 2>/dev/null || echo "ecommerce-${ENVIRONMENT}-cluster")
+        REGISTRY_URL=$(terraform output -raw artifact_registry_url 2>/dev/null || echo "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}")
 
         echo "  Cluster GKE: ${CLUSTER_NAME}"
         echo "  Artifact Registry: ${REGISTRY_URL}"
 
-        if [ "${CLUSTER_NAME}" = "unknown" ] || [ "${REGISTRY_URL}" = "unknown" ]; then
-            echo "⚠️ Advertencia: Algunos outputs de Terraform no disponibles"
-            echo "   (La infraestructura podría no estar creada aún)"
+        if [ "${CLUSTER_NAME}" = "ecommerce-${ENVIRONMENT}-cluster" ]; then
+            echo "⚠️ Usando valores por defecto (outputs de Terraform no disponibles)"
+            echo "   La infraestructura debe estar creada manualmente"
         fi
 
         echo "✅ Validación de Terraform completada"
