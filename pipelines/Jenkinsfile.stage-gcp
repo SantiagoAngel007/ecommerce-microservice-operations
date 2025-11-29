@@ -82,7 +82,7 @@ def checkoutCode() {
         echo "🔄 Clonando repositorio de código..."
         mkdir -p code
         cd code
-        git clone -b master https://github.com/SelimHorri/ecommerce-microservice-backend-app.git .
+        git clone -b master https://github.com/SantiagoAngel007/ecommerce-microservice-backend-app.git .
         echo "✅ Código clonado"
     '''
 }
@@ -95,7 +95,7 @@ def checkoutOps() {
         echo "🔄 Clonando repositorio de operaciones..."
         mkdir -p ops
         cd ops
-        git clone -b main https://github.com/SelimHorri/ecommerce-microservice-operations.git .
+        git clone -b main https://github.com/SantiagoAngel007/ecommerce-microservice-operations.git .
         echo "✅ Operaciones clonadas"
     '''
 }
@@ -584,10 +584,15 @@ pipeline {
     }
 
     environment {
-        GCP_PROJECT_ID = "ecommerce-microservices-478116"
-        GCP_REGION = "southamerica-east1"
+        // GCP_PROJECT_ID = "ecommerce-microservices-478116"
+        // GCP_REGION = "southamerica-east1"
+
+        GCP_PROJECT_ID = "ecommerce-microservices-479317"
+        GCP_REGION = "us-central1"
         GCP_CREDENTIALS_FILE = credentials('gcp-service-account-key')
-        ARTIFACT_REGISTRY_REPO = "docker-repo"
+        // ARTIFACT_REGISTRY_REPO = "docker-repo"
+
+        ARTIFACT_REGISTRY_REPO = "ecommerce-repo"
 
         ENVIRONMENT = "stage"
         DOCKER_TAG = "stage-${BUILD_NUMBER}"
