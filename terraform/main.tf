@@ -84,43 +84,11 @@ resource "google_container_cluster" "primary" {
   name     = var.gke_cluster_name
   location = var.gcp_region
 
-  initial_node_count = var.gke_node_count
-  network            = google_compute_network.vpc.name
-  subnetwork         = google_compute_subnetwork.subnet.name
+  # GKE Autopilot - Modo gestionado que evita problemas de quota de SSD
+  enable_autopilot = true
 
-  # We can't create this cluster with "remove_default_node_pool" and
-  # specify "node_pool" at the same time, so we'll create the primary node pool.
-  remove_default_node_pool = true
-
-  # Configure cluster options
-  enable_shielded_nodes = true
-
-  # Workload Identity
-  workload_identity_config {
-    workload_pool = "${var.gcp_project_id}.svc.id.goog"
-  }
-
-  # Network policy
-  network_policy {
-    enabled = true
-  }
-
-  # Vertical Pod Autoscaling
-  vertical_pod_autoscaling {
-    enabled = true
-  }
-
-  # Cluster autoscaling
-  cluster_autoscaling {
-    enabled = false
-  }
-
-  # Maintenance window
-  maintenance_policy {
-    daily_maintenance_window {
-      start_time = "03:00"
-    }
-  }
+  network    = google_compute_network.vpc.name
+  subnetwork = google_compute_subnetwork.subnet.name
 
   # IP allocation policy for VPC-native cluster
   ip_allocation_policy {
@@ -129,12 +97,15 @@ resource "google_container_cluster" "primary" {
   }
 
   # Logging and monitoring
-  logging_service    = "logging.googleapis.com/kubernetes"
-  monitoring_service = "monitoring.googleapis.com/kubernetes"
+  logging_config {
+    enable_components = ["SYSTEM_COMPONENTS", "WORKLOADS"]
+  }
 
-  # Required for Cloud SQL connections
-  database_encryption {
-    state = "ENCRYPTED"
+  monitoring_config {
+    enable_components = ["SYSTEM_COMPONENTS"]
+    managed_prometheus {
+      enabled = true
+    }
   }
 
   # Master authorized networks (restrict API access)
@@ -145,54 +116,62 @@ resource "google_container_cluster" "primary" {
     }
   }
 
+  # Maintenance window
+  maintenance_policy {
+    daily_maintenance_window {
+      start_time = "03:00"
+    }
+  }
+
   depends_on = [
     google_project_service.required_apis
   ]
 }
 
-# Node Pool
-resource "google_container_node_pool" "primary" {
-  name       = var.gke_node_pool_name
-  location   = var.gcp_region
-  cluster    = google_container_cluster.primary.name
-  node_count = var.gke_node_count
-
-  autoscaling {
-    min_node_count = var.gke_min_node_count
-    max_node_count = var.gke_max_node_count
-  }
-
-  management {
-    auto_repair  = true
-    auto_upgrade = true
-  }
-
-  node_config {
-    preemptible  = var.environment == "prod" ? false : true
-    machine_type = var.gke_machine_type
-    disk_size_gb = 100
-
-    oauth_scopes = [
-      "https://www.googleapis.com/auth/cloud-platform"
-    ]
-
-    workload_metadata_config {
-      mode = "GKE_METADATA"
-    }
-
-    shielded_instance_config {
-      enable_secure_boot          = true
-      enable_integrity_monitoring = true
-    }
-
-    labels = {
-      environment = var.environment
-      managed_by  = "terraform"
-    }
-
-    tags = concat(var.tags, ["kubernetes-node", var.environment])
-  }
-}
+# Node Pool - COMENTADO: Autopilot gestiona los nodos automáticamente
+# No se necesita node pool manual en modo Autopilot
+# resource "google_container_node_pool" "primary" {
+#   name       = var.gke_node_pool_name
+#   location   = var.gcp_region
+#   cluster    = google_container_cluster.primary.name
+#   node_count = var.gke_node_count
+#
+#   autoscaling {
+#     min_node_count = var.gke_min_node_count
+#     max_node_count = var.gke_max_node_count
+#   }
+#
+#   management {
+#     auto_repair  = true
+#     auto_upgrade = true
+#   }
+#
+#   node_config {
+#     preemptible  = var.environment == "prod" ? false : true
+#     machine_type = var.gke_machine_type
+#     disk_size_gb = 30
+#
+#     oauth_scopes = [
+#       "https://www.googleapis.com/auth/cloud-platform"
+#     ]
+#
+#     workload_metadata_config {
+#       mode = "GKE_METADATA"
+#     }
+#
+#     shielded_instance_config {
+#       enable_secure_boot          = true
+#       enable_integrity_monitoring = true
+#     }
+#
+#     labels = {
+#       environment = var.environment
+#       managed_by  = "terraform"
+#     }
+#
+#     tags = concat(var.tags, ["kubernetes-node", var.environment])
+#   }
+# }
 
 # Service Account for Kubernetes workloads
 resource "google_service_account" "kubernetes_workload" {
@@ -200,92 +179,93 @@ resource "google_service_account" "kubernetes_workload" {
   display_name = "Kubernetes Workload SA for ${var.environment}"
 }
 
-# Cloud SQL Instance
-resource "google_sql_database_instance" "instance" {
-  name                = "${var.project_name}-${var.environment}-db"
-  database_version    = var.database_version
-  region              = var.gcp_region
-  deletion_protection = var.environment == "prod" ? true : false
+# Cloud SQL Instance - COMENTADO: Quota de SSD insuficiente (100GB disponibles)
+# Los microservicios usarán H2 en memoria (configurado en application-dev.yml)
+# resource "google_sql_database_instance" "instance" {
+#   name                = "${var.project_name}-${var.environment}-db"
+#   database_version    = var.database_version
+#   region              = var.gcp_region
+#   deletion_protection = var.environment == "prod" ? true : false
+#
+#   settings {
+#     tier              = var.database_tier
+#     availability_type = var.environment == "prod" ? "REGIONAL" : "ZONAL"
+#     disk_type         = "PD_SSD"
+#     disk_size         = var.database_storage_gb
+#     disk_autoresize   = true
+#
+#     # Backup
+#     backup_configuration {
+#       enabled                        = true
+#       start_time                     = "03:00"
+#       transaction_log_retention_days = 7
+#       backup_retention_settings {
+#         retained_backups = 30
+#         retention_unit   = "COUNT"
+#       }
+#     }
+#
+#     # IP Configuration
+#     ip_configuration {
+#       ipv4_enabled                                  = true
+#       private_network                               = google_compute_network.vpc.id
+#       # enable_private_path_for_cloudsql_cloud_sql    = true  # COMENTADO: argumento inválido en provider actual
+#       require_ssl                                   = var.environment == "prod" ? true : false
+#     }
+#
+#     # Database flags (cloudsql_iam_authentication flag comentado - puede causar error 404)
+#     # database_flags {
+#     #   name  = "cloudsql_iam_authentication"
+#     #   value = "on"
+#     # }
+#
+#     # Insights
+#     insights_config {
+#       query_insights_enabled  = true
+#       query_plans_per_minute  = 5
+#       query_string_length     = 1024
+#       record_application_tags = true
+#     }
+#   }
+#
+#   depends_on = [
+#     google_project_service.required_apis,
+#     google_service_networking_connection.private_vpc_connection
+#   ]
+# }
 
-  settings {
-    tier              = var.database_tier
-    availability_type = var.environment == "prod" ? "REGIONAL" : "ZONAL"
-    disk_type         = "PD_SSD"
-    disk_size         = var.database_storage_gb
-    disk_autoresize   = true
+# Private VPC Connection for Cloud SQL - COMENTADO (no necesario sin Cloud SQL)
+# resource "google_compute_global_address" "private_ip_address" {
+#   name          = "${var.project_name}-${var.environment}-private-ip"
+#   purpose       = "VPC_PEERING"
+#   address_type  = "INTERNAL"
+#   prefix_length = 16
+#   network       = google_compute_network.vpc.id
+# }
+#
+# resource "google_service_networking_connection" "private_vpc_connection" {
+#   network                 = google_compute_network.vpc.id
+#   service                 = "servicenetworking.googleapis.com"
+#   reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
+# }
 
-    # Backup
-    backup_configuration {
-      enabled                        = true
-      start_time                     = "03:00"
-      transaction_log_retention_days = 7
-      backup_retention_settings {
-        retained_backups = 30
-        retention_unit   = "COUNT"
-      }
-    }
-
-    # IP Configuration
-    ip_configuration {
-      ipv4_enabled                                  = true
-      private_network                               = google_compute_network.vpc.id
-      enable_private_path_for_cloudsql_cloud_sql    = true
-      require_ssl                                   = var.environment == "prod" ? true : false
-    }
-
-    # Database flags
-    database_flags {
-      name  = "cloudsql_iam_authentication"
-      value = "on"
-    }
-
-    # Insights
-    insights_config {
-      query_insights_enabled  = true
-      query_plans_per_minute  = 5
-      query_string_length     = 1024
-      record_application_tags = true
-    }
-  }
-
-  depends_on = [
-    google_project_service.required_apis,
-    google_service_networking_connection.private_vpc_connection
-  ]
-}
-
-# Private VPC Connection for Cloud SQL
-resource "google_compute_global_address" "private_ip_address" {
-  name          = "${var.project_name}-${var.environment}-private-ip"
-  purpose       = "VPC_PEERING"
-  address_type  = "INTERNAL"
-  prefix_length = 16
-  network       = google_compute_network.vpc.id
-}
-
-resource "google_service_networking_connection" "private_vpc_connection" {
-  network                 = google_compute_network.vpc.id
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
-}
-
-# Database
-resource "google_sql_database" "ecommerce_db" {
-  name     = var.database_name
-  instance = google_sql_database_instance.instance.name
-}
-
-# Database User
-resource "google_sql_user" "db_user" {
-  name     = var.database_user
-  instance = google_sql_database_instance.instance.name
-  password = random_password.db_password.result
-}
-
-resource "random_password" "db_password" {
-  length  = 32
-  special = true
-}
+# Database - COMENTADO (microservicios usarán H2)
+# resource "google_sql_database" "ecommerce_db" {
+#   name     = var.database_name
+#   instance = google_sql_database_instance.instance.name
+# }
+#
+# # Database User
+# resource "google_sql_user" "db_user" {
+#   name     = var.database_user
+#   instance = google_sql_database_instance.instance.name
+#   password = random_password.db_password.result
+# }
+#
+# resource "random_password" "db_password" {
+#   length  = 32
+#   special = true
+# }
 
 # Artifact Registry Repository
 resource "google_artifact_registry_repository" "microservices" {
@@ -299,37 +279,53 @@ resource "google_artifact_registry_repository" "microservices" {
   ]
 }
 
-# Create a secret for database password
-resource "google_secret_manager_secret" "db_password" {
-  secret_id = "${var.project_name}-${var.environment}-db-password"
+# Create a secret for database password - COMENTADO (no necesario sin Cloud SQL)
+# resource "google_secret_manager_secret" "db_password" {
+#   secret_id = "${var.project_name}-${var.environment}-db-password"
+#
+#   replication {
+#     auto {}
+#   }
+#
+#   depends_on = [
+#     google_project_service.required_apis
+#   ]
+# }
+#
+# resource "google_secret_manager_secret_version" "db_password" {
+#   secret      = google_secret_manager_secret.db_password.id
+#   secret_data = random_password.db_password.result
+# }
 
-  replication {
-    auto {}
-  }
-
-  depends_on = [
-    google_project_service.required_apis
-  ]
-}
-
-resource "google_secret_manager_secret_version" "db_password" {
-  secret      = google_secret_manager_secret.db_password.id
-  secret_data = random_password.db_password.result
-}
-
-# IAM binding for Kubernetes workload to access Cloud SQL
-resource "google_project_iam_member" "workload_sql_client" {
-  project = var.gcp_project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.kubernetes_workload.email}"
-}
+# IAM binding for Kubernetes workload to access Cloud SQL - COMENTADO (no necesario sin Cloud SQL)
+# resource "google_project_iam_member" "workload_sql_client" {
+#   project = var.gcp_project_id
+#   role    = "roles/cloudsql.client"
+#   member  = "serviceAccount:${google_service_account.kubernetes_workload.email}"
+# }
 
 # Local file with cluster connection info
 resource "local_file" "kubeconfig_instructions" {
   filename = "${path.module}/kubeconfig-${var.environment}.sh"
-  content = templatefile("${path.module}/kubeconfig-template.sh", {
-    cluster_name = google_container_cluster.primary.name
-    gcp_region   = var.gcp_region
-    gcp_project  = var.gcp_project_id
-  })
+  content = <<-EOT
+    #!/bin/bash
+    # Instrucciones para conectar kubectl al cluster GKE
+    
+    # 1. Autenticar con GCP
+    gcloud auth login
+    
+    # 2. Configurar proyecto
+    gcloud config set project ${var.gcp_project_id}
+    
+    # 3. Obtener credenciales del cluster
+    gcloud container clusters get-credentials ${google_container_cluster.primary.name} \
+      --region ${var.gcp_region} \
+      --project ${var.gcp_project_id}
+    
+    # 4. Verificar conexión
+    kubectl get nodes
+    kubectl get namespaces
+    
+    echo "¡Conectado a cluster GKE: ${google_container_cluster.primary.name}!"
+  EOT
 }
