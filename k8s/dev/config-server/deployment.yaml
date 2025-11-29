@@ -34,16 +34,16 @@ spec:
           value: "file:///config"
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
             memory: "512Mi"
             cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
         livenessProbe:
           httpGet:
             path: /actuator/health
             port: 8888
-          initialDelaySeconds: 60
+          initialDelaySeconds: 180
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
@@ -51,10 +51,10 @@ spec:
           httpGet:
             path: /actuator/health
             port: 8888
-          initialDelaySeconds: 30
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 2
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
         volumeMounts:
         - name: config-repo
           mountPath: /config

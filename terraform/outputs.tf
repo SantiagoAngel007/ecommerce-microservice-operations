@@ -58,31 +58,31 @@ output "project_id" {
   value       = var.gcp_project_id
 }
 
-# Cloud SQL outputs
-output "database_instance_name" {
-  description = "Cloud SQL instance name"
-  value       = google_sql_database_instance.instance.name
-}
-
-output "database_instance_connection_name" {
-  description = "Cloud SQL instance connection name"
-  value       = google_sql_database_instance.instance.connection_name
-}
-
-output "database_private_ip" {
-  description = "Cloud SQL instance private IP"
-  value       = google_sql_database_instance.instance.private_ip_address
-}
-
-output "database_public_ip" {
-  description = "Cloud SQL instance public IP"
-  value       = google_sql_database_instance.instance.public_ip_address
-}
+# Cloud SQL outputs - COMENTADO (no desplegamos Cloud SQL por quota de SSD)
+# output "database_instance_name" {
+#   description = "Cloud SQL instance name"
+#   value       = google_sql_database_instance.instance.name
+# }
+#
+# output "database_instance_connection_name" {
+#   description = "Cloud SQL instance connection name"
+#   value       = google_sql_database_instance.instance.connection_name
+# }
+#
+# output "database_private_ip" {
+#   description = "Cloud SQL instance private IP"
+#   value       = google_sql_database_instance.instance.private_ip_address
+# }
+#
+# output "database_public_ip" {
+#   description = "Cloud SQL instance public IP"
+#   value       = google_sql_database_instance.instance.public_ip_address
+# }
 
 # Artifact Registry outputs
 output "artifact_registry_repository_url" {
   description = "Artifact Registry repository URL"
-  value       = google_artifact_registry_repository.microservices.repository_url
+  value       = "${var.gcp_region}-docker.pkg.dev/${var.gcp_project_id}/${google_artifact_registry_repository.microservices.repository_id}"
 }
 
 output "artifact_registry_repository_name" {
