@@ -234,7 +234,7 @@ def runPerformanceTests() {
         # Instalar Locust si no existe
         if ! command -v locust &> /dev/null; then
             echo "Instalando Locust..."
-            pip install -q locust
+            pip3 install -q locust
         fi
 
         cd code/performance-tests
