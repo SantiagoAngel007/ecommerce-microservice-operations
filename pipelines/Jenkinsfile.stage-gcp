@@ -478,6 +478,67 @@ def runCodeQualityAnalysis() {
     '''
 }
 
+def generateSemanticVersion() {
+    """
+    Genera versión semántica para STAGE
+    En STAGE se usa la misma versión base pero con sufijo -stage
+    Formato: v<MAJOR>.<MINOR>.<PATCH>-stage.<BUILD>
+    """
+    sh '''
+        echo "🏷️  Generando versión semántica para STAGE..."
+        echo ""
+        
+        cd code
+        
+        # Obtener última tag del repositorio backend
+        LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        echo "📌 Última versión encontrada: $LAST_TAG"
+        
+        # Extraer números de versión
+        VERSION_NUMBERS=$(echo $LAST_TAG | sed 's/v//' | tr '.' ' ')
+        
+        if [ "$LAST_TAG" = "v0.0.0" ]; then
+            # Primera versión
+            MAJOR=1
+            MINOR=0
+            PATCH=0
+            echo "ℹ️  No hay versiones previas, iniciando con v1.0.0"
+        else
+            # Parsear versión actual (en STAGE no incrementamos, usamos la última)
+            MAJOR=$(echo $VERSION_NUMBERS | awk '{print $1}')
+            MINOR=$(echo $VERSION_NUMBERS | awk '{print $2}')
+            PATCH=$(echo $VERSION_NUMBERS | awk '{print $3}')
+            
+            echo "ℹ️  Usando versión: $LAST_TAG"
+        fi
+        
+        # Generar versión para STAGE
+        NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+        
+        # Para STAGE agregar sufijo con build number
+        FULL_VERSION="${NEW_VERSION}-${ENVIRONMENT}.${BUILD_NUMBER}"
+        
+        echo ""
+        echo "────────────────────────────────────"
+        echo "📦 VERSIÓN PARA STAGE"
+        echo "────────────────────────────────────"
+        echo "Versión base:    $NEW_VERSION"
+        echo "Versión completa: $FULL_VERSION"
+        echo "Ambiente:        $ENVIRONMENT"
+        echo "Build:           #$BUILD_NUMBER"
+        echo "────────────────────────────────────"
+        
+        # Guardar versión para uso posterior
+        echo "$FULL_VERSION" > ../semantic-version.txt
+        echo "$NEW_VERSION" > ../base-version.txt
+        
+        cd ..
+        
+        echo ""
+        echo "✅ Versión semántica generada"
+    '''
+}
+
 def buildAndPushImages() {
     """
     Compila y sube imágenes a Artifact Registry
@@ -763,7 +824,8 @@ pipeline {
         ARTIFACT_REGISTRY_REPO = "ecommerce-repo"
 
         ENVIRONMENT = "stage"
-        DOCKER_TAG = "stage-${BUILD_NUMBER}"
+        // DOCKER_TAG se genera dinámicamente con versionado semántico
+        // DOCKER_TAG = "stage-${BUILD_NUMBER}"  // Obsoleto: reemplazado por semantic versioning
 
         // SonarCloud Configuration (comentado hasta configurar credenciales)
         // SONARCLOUD_TOKEN = credentials('sonarcloud-token')
@@ -867,7 +929,19 @@ pipeline {
             }
         }
 
-        stage('11. Build & Push Images') {
+        stage('11. Generate Semantic Version') {
+            steps {
+                script {
+                    generateSemanticVersion()
+                    // Leer versión generada y exportar como variable de entorno
+                    env.DOCKER_TAG = readFile('semantic-version.txt').trim()
+                    env.BASE_VERSION = readFile('base-version.txt').trim()
+                    echo "🏷️  Usando versión: ${env.DOCKER_TAG}"
+                }
+            }
+        }
+
+        stage('12. Build & Push Images') {
             steps {
                 script {
                     buildAndPushImages()
@@ -875,7 +949,7 @@ pipeline {
             }
         }
 
-        stage('12. Security Scan (Trivy)') {
+        stage('13. Security Scan (Trivy)') {
             when {
                 expression { params.SCAN_VULNERABILITIES == true }
             }
@@ -886,7 +960,7 @@ pipeline {
             }
         }
 
-        stage('13. Approve Deployment') {
+        stage('14. Approve Deployment') {
             steps {
                 script {
                     approveDeployment()
@@ -894,7 +968,7 @@ pipeline {
             }
         }
 
-        stage('14. Deploy to Kubernetes') {
+        stage('15. Deploy to Kubernetes') {
             steps {
                 script {
                     deployToKubernetes()
@@ -902,7 +976,7 @@ pipeline {
             }
         }
 
-        stage('15. Verify Deployment') {
+        stage('16. Verify Deployment') {
             steps {
                 script {
                     verifyDeployment()
@@ -919,10 +993,14 @@ pipeline {
             ==========================================
             
             Ambiente: ${ENVIRONMENT}
-            Docker Tag: ${DOCKER_TAG}
+            Versión: ${DOCKER_TAG}
+            Versión Base: ${BASE_VERSION}
+            Build: #${BUILD_NUMBER}
             
             ✓ Pruebas unitarias PASARON
             ✓ Pruebas de integración COMPLETADAS
+            ✓ Análisis de calidad completado
+            ✓ Versión semántica generada
             ✓ Imágenes subidas a Artifact Registry
             ✓ Servicios desplegados en GKE
             
