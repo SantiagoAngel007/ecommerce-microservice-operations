@@ -79,13 +79,13 @@ resource "google_project_service" "required_apis" {
   disable_on_destroy = false
 }
 
-# GKE Cluster
+# GKE Cluster (Autopilot o Standard según configuración)
 resource "google_container_cluster" "primary" {
   name     = var.gke_cluster_name
   location = var.gcp_region
 
-  # GKE Autopilot - Modo gestionado que evita problemas de quota de SSD
-  enable_autopilot = true
+  # GKE Autopilot o Standard
+  enable_autopilot = var.gke_autopilot_enabled
 
   network    = google_compute_network.vpc.name
   subnetwork = google_compute_subnetwork.subnet.name
@@ -95,6 +95,23 @@ resource "google_container_cluster" "primary" {
     cluster_secondary_range_name  = "pods"
     services_secondary_range_name = "services"
   }
+
+  # Configuración solo para modo Standard (no aplica en Autopilot)
+  dynamic "node_config" {
+    for_each = var.gke_autopilot_enabled ? [] : [1]
+    content {
+      machine_type = var.gke_machine_type
+      disk_size_gb = var.gke_disk_size_gb
+      disk_type    = var.gke_disk_type
+      
+      oauth_scopes = [
+        "https://www.googleapis.com/auth/cloud-platform"
+      ]
+    }
+  }
+
+  # Initial node count (solo para Standard)
+  initial_node_count = var.gke_autopilot_enabled ? null : var.gke_node_count
 
   # Logging and monitoring
   logging_config {

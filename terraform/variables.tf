@@ -136,3 +136,22 @@ variable "tags" {
   type        = list(string)
   default     = ["terraform"]
 }
+
+# GKE Autopilot vs Standard
+variable "gke_autopilot_enabled" {
+  description = "Enable GKE Autopilot mode (true) or use Standard mode (false)"
+  type        = bool
+  default     = true
+}
+
+variable "gke_disk_size_gb" {
+  description = "Boot disk size for GKE nodes (only for Standard mode)"
+  type        = number
+  default     = 30
+}
+
+variable "gke_disk_type" {
+  description = "Boot disk type for GKE nodes (only for Standard mode)"
+  type        = string
+  default     = "pd-standard"
+}

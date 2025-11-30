@@ -56,26 +56,48 @@ def getKubeConfig() {
 
 def validateTerraformOutputs() {
     """
-    Valida infraestructura de Terraform
+    Valida infraestructura de Terraform (enfoque modular)
+    STAGE puede tener infraestructura dedicada O compartir cluster con DEV
     """
     sh '''
-        echo "📋 Validando outputs de Terraform..."
-
-        cd ops/terraform/environments/${ENVIRONMENT}
-
-        terraform init -backend=true
-
-        CLUSTER_NAME=$(terraform output -raw gke_cluster_name 2>/dev/null || echo "unknown")
-        REGISTRY_URL=$(terraform output -raw artifact_registry_url 2>/dev/null || echo "unknown")
-
-        echo "  Cluster GKE: ${CLUSTER_NAME}"
-        echo "  Artifact Registry: ${REGISTRY_URL}"
-
-        if [ "${CLUSTER_NAME}" = "unknown" ] || [ "${REGISTRY_URL}" = "unknown" ]; then
-            echo "⚠️  Advertencia: Algunos outputs de Terraform no disponibles"
+        echo "📋 Validando infraestructura..."
+        
+        # Verificar si existe configuración de Terraform para STAGE
+        if [ -d "ops/terraform/environments/${ENVIRONMENT}" ] && [ -f "ops/terraform/environments/${ENVIRONMENT}/main.tf" ]; then
+            echo "ℹ️  Detectada configuración modular de Terraform para ${ENVIRONMENT}"
+            
+            cd ops/terraform/environments/${ENVIRONMENT}
+            
+            # Intentar init (puede fallar si no hay infraestructura real)
+            if terraform init -backend=true 2>/dev/null; then
+                echo "✅ Terraform backend inicializado"
+                
+                # Intentar obtener outputs
+                CLUSTER_NAME=$(terraform output -raw gke_cluster_name 2>/dev/null || echo "")
+                REGISTRY_URL=$(terraform output -raw artifact_registry_url 2>/dev/null || echo "")
+                
+                if [ -n "${CLUSTER_NAME}" ]; then
+                    echo "  Cluster GKE: ${CLUSTER_NAME}"
+                fi
+                if [ -n "${REGISTRY_URL}" ]; then
+                    echo "  Artifact Registry: ${REGISTRY_URL}"
+                fi
+            else
+                echo "⚠️  Terraform init falló - asumiendo infraestructura compartida"
+            fi
         fi
-
-        echo "✅ Validación completada"
+        
+        # Validar acceso real a Kubernetes (funciona para ambos casos)
+        echo ""
+        echo "Validando acceso a Kubernetes..."
+        kubectl cluster-info | head -1
+        
+        echo ""
+        echo "Validando namespace ${ENVIRONMENT}..."
+        kubectl get namespace ${ENVIRONMENT} -o jsonpath='{.metadata.name}' && echo " ✓"
+        
+        echo ""
+        echo "✅ Infraestructura validada para ${ENVIRONMENT}"
     '''
 }
 
