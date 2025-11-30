@@ -35,14 +35,14 @@ def setupGCPAuth() {
 
 def getKubeConfig() {
     """
-    Obtiene kubeconfig de GKE de forma nativa (sin archivos)
+    Obtiene kubeconfig de GKE DEV (cluster zonal en us-central1-a)
     """
     sh '''
-        echo "🔗 Obteniendo credenciales de GKE..."
+        echo "🔗 Obteniendo credenciales de GKE DEV..."
 
-        # Obtener credenciales del cluster GKE
+        # Obtener credenciales del cluster GKE (zonal, no regional)
         gcloud container clusters get-credentials ecommerce-${ENVIRONMENT}-cluster \
-            --region=${GCP_REGION} \
+            --zone=us-central1-a \
             --project=${GCP_PROJECT_ID}
 
         # Verificar conexión
@@ -50,7 +50,7 @@ def getKubeConfig() {
         kubectl cluster-info
         kubectl get nodes
 
-        echo "✅ Conexión a GKE establecida"
+        echo "✅ Conexión a GKE DEV establecida (cluster zonal)"
     '''
 }
 
