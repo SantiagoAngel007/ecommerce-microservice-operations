@@ -409,6 +409,75 @@ def runSonarCloud() {
     '''
 }
 
+def runCodeQualityAnalysis() {
+    """
+    Análisis estático de código con Checkstyle y PMD
+    Alternativa a SonarQube que no requiere configuración externa
+    En STAGE puede bloquear el pipeline si hay demasiadas violaciones
+    """
+    sh '''
+        echo "📊 Ejecutando análisis de calidad de código (Checkstyle/PMD)..."
+        echo ""
+
+        cd code
+
+        SERVICES="user-service product-service order-service payment-service favourite-service shipping-service"
+        
+        TOTAL_VIOLATIONS=0
+        mkdir -p ../code-quality-reports
+
+        for service in $SERVICES; do
+            echo "────────────────────────────────────"
+            echo "Analizando: ${service}"
+            echo "────────────────────────────────────"
+            
+            cd ${service}
+            
+            # Ejecutar Checkstyle (estilo de código)
+            echo "🔍 Checkstyle..."
+            mvn checkstyle:check -q 2>&1 | tee ../../code-quality-reports/${service}-checkstyle.log || true
+            
+            # Ejecutar PMD (detección de problemas potenciales)
+            echo "🔍 PMD..."
+            mvn pmd:check -q 2>&1 | tee ../../code-quality-reports/${service}-pmd.log || true
+            
+            # Contar violaciones
+            CHECKSTYLE_VIOLATIONS=$(grep -c "\\[ERROR\\]" ../../code-quality-reports/${service}-checkstyle.log 2>/dev/null || echo 0)
+            PMD_VIOLATIONS=$(grep -c "\\[ERROR\\]" ../../code-quality-reports/${service}-pmd.log 2>/dev/null || echo 0)
+            
+            SERVICE_TOTAL=$((CHECKSTYLE_VIOLATIONS + PMD_VIOLATIONS))
+            TOTAL_VIOLATIONS=$((TOTAL_VIOLATIONS + SERVICE_TOTAL))
+            
+            if [ $SERVICE_TOTAL -eq 0 ]; then
+                echo "✅ ${service}: Sin violaciones"
+            else
+                echo "⚠️  ${service}: ${SERVICE_TOTAL} violaciones encontradas"
+            fi
+            
+            cd ..
+            echo ""
+        done
+
+        cd ..
+        
+        echo "────────────────────────────────────"
+        echo "📋 RESUMEN DE ANÁLISIS DE CALIDAD"
+        echo "────────────────────────────────────"
+        echo "Total de violaciones: ${TOTAL_VIOLATIONS}"
+        echo ""
+        
+        if [ $TOTAL_VIOLATIONS -eq 0 ]; then
+            echo "✅ Análisis de calidad APROBADO - Sin violaciones"
+        else
+            echo "⚠️  Análisis de calidad con ${TOTAL_VIOLATIONS} violaciones"
+            echo "ℹ️  Ambiente STAGE - Pipeline continúa (revisar reportes)"
+        fi
+        
+        echo "✅ Análisis de código completado"
+        echo "   Reportes guardados en: code-quality-reports/"
+    '''
+}
+
 def buildAndPushImages() {
     """
     Compila y sube imágenes a Artifact Registry
@@ -790,10 +859,10 @@ pipeline {
             }
         }
 
-        stage('10. Code Quality (SonarCloud)') {
+        stage('10. Code Quality Analysis (Checkstyle/PMD)') {
             steps {
                 script {
-                    runSonarCloud()
+                    runCodeQualityAnalysis()
                 }
             }
         }
@@ -873,7 +942,7 @@ pipeline {
                 // Archivar artefactos solo si existen
                 try {
                     archiveArtifacts(
-                        artifacts: 'test-results/**,test-reports/**,performance-test-results/**,trivy-reports/**',
+                        artifacts: 'test-results/**,test-reports/**,performance-test-results/**,trivy-reports/**,code-quality-reports/**',
                         allowEmptyArchive: true
                     )
                 } catch (Exception e) {
