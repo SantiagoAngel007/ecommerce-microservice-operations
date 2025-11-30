@@ -92,15 +92,15 @@ def validateTerraformOutputs() {
 
 def checkoutCode() {
     """
-    Clona el repositorio de código
+    Clona el repositorio de código desde la rama DEV
     """
     sh '''
-        echo "🔄 Clonando repositorio de código..."
+        echo "🔄 Clonando repositorio de código (rama dev)..."
         rm -rf code
         mkdir -p code
         cd code
-        git clone -b master https://github.com/SantiagoAngel007/ecommerce-microservice-backend-app.git .
-        echo "✅ Código clonado"
+        git clone -b dev https://github.com/SantiagoAngel007/ecommerce-microservice-backend-app.git .
+        echo "✅ Código clonado desde rama dev"
     '''
 }
 
