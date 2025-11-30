@@ -182,7 +182,8 @@ def buildAndPushImages() {
 def runTrivy() {
     """
     Escanea vulnerabilidades en imágenes Docker con Trivy
-    (Opcional, solo si SCAN_VULNERABILITIES=true)
+    - Genera reportes JSON para cada servicio
+    - Si FAIL_ON_VULNERABILITIES=true, falla el pipeline si encuentra HIGH/CRITICAL
     """
     sh '''
         if [ "${SCAN_VULNERABILITIES}" != "true" ]; then
@@ -192,28 +193,76 @@ def runTrivy() {
 
         echo "🔍 Escaneando vulnerabilidades con Trivy..."
 
-        # Instalar Trivy si no existe
-        if ! command -v trivy &> /dev/null; then
-            echo "Instalando Trivy..."
-            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+        # Instalar Trivy en directorio local si no existe
+        TRIVY_BIN="${WORKSPACE}/trivy"
+        if ! command -v trivy &> /dev/null && [ ! -f "${TRIVY_BIN}" ]; then
+            echo "Instalando Trivy en ${WORKSPACE}..."
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b ${WORKSPACE}
+            chmod +x ${TRIVY_BIN}
         fi
+        
+        # Usar trivy local o del sistema
+        if [ -f "${TRIVY_BIN}" ]; then
+            TRIVY_CMD="${TRIVY_BIN}"
+        else
+            TRIVY_CMD="trivy"
+        fi
+        
+        echo "Usando Trivy: ${TRIVY_CMD}"
 
         SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
 
         mkdir -p trivy-reports
+        TOTAL_HIGH=0
+        TOTAL_CRITICAL=0
+        FAILED_SERVICES=""
 
         for service in $SERVICES; do
             IMAGE_NAME="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${service}:${DOCKER_TAG}"
 
             echo "Escaneando: ${service}"
-            trivy image --severity HIGH,CRITICAL \
+            ${TRIVY_CMD} image --severity HIGH,CRITICAL \
                 --format json \
                 --output trivy-reports/${service}-scan.json \
                 ${IMAGE_NAME} || true
 
-            # Mostrar resumen
-            echo "  Resultados guardados en trivy-reports/${service}-scan.json"
+            # Contar vulnerabilidades HIGH y CRITICAL
+            if [ -f "trivy-reports/${service}-scan.json" ]; then
+                HIGH=$(grep -o '"Severity":"HIGH"' trivy-reports/${service}-scan.json | wc -l || echo 0)
+                CRITICAL=$(grep -o '"Severity":"CRITICAL"' trivy-reports/${service}-scan.json | wc -l || echo 0)
+                
+                TOTAL_HIGH=$((TOTAL_HIGH + HIGH))
+                TOTAL_CRITICAL=$((TOTAL_CRITICAL + CRITICAL))
+
+                if [ $HIGH -gt 0 ] || [ $CRITICAL -gt 0 ]; then
+                    echo "  ⚠️  ${service}: ${CRITICAL} CRITICAL, ${HIGH} HIGH"
+                    FAILED_SERVICES="${FAILED_SERVICES} ${service}"
+                else
+                    echo "  ✅ ${service}: Sin vulnerabilidades HIGH/CRITICAL"
+                fi
+            fi
         done
+
+        echo ""
+        echo "📊 RESUMEN DE VULNERABILIDADES:"
+        echo "  Total CRITICAL: ${TOTAL_CRITICAL}"
+        echo "  Total HIGH: ${TOTAL_HIGH}"
+        
+        if [ -n "${FAILED_SERVICES}" ]; then
+            echo "  Servicios afectados:${FAILED_SERVICES}"
+        fi
+
+        # Fallar pipeline si está habilitado y hay vulnerabilidades
+        if [ "${FAIL_ON_VULNERABILITIES}" = "true" ]; then
+            if [ $TOTAL_CRITICAL -gt 0 ] || [ $TOTAL_HIGH -gt 0 ]; then
+                echo ""
+                echo "❌ PIPELINE FALLADO: Se encontraron vulnerabilidades HIGH/CRITICAL"
+                exit 1
+            fi
+        else
+            echo ""
+            echo "ℹ️  FAIL_ON_VULNERABILITIES=false - Pipeline continúa a pesar de vulnerabilidades"
+        fi
 
         echo "✅ Escaneo de vulnerabilidades completado"
     '''
@@ -403,11 +452,21 @@ pipeline {
         SCAN_VULNERABILITIES = "${params.SCAN_VULNERABILITIES ?: 'false'}"
     }
 
+    triggers {
+        // Webhook de GitHub: se activa automáticamente en push a rama 'dev'
+        githubPush()
+    }
+
     parameters {
         booleanParam(
             name: 'SCAN_VULNERABILITIES',
-            defaultValue: false,
+            defaultValue: true,  // Habilitado por defecto en DEV
             description: 'Escanear vulnerabilidades con Trivy'
+        )
+        booleanParam(
+            name: 'FAIL_ON_VULNERABILITIES',
+            defaultValue: false,  // En DEV solo reporta, no bloquea
+            description: 'Fallar pipeline si hay vulnerabilidades HIGH/CRITICAL'
         )
     }
 
