@@ -602,10 +602,10 @@ pipeline {
         ENVIRONMENT = "stage"
         DOCKER_TAG = "stage-${BUILD_NUMBER}"
 
-        // SonarCloud Configuration
-        SONARCLOUD_TOKEN = credentials('sonarcloud-token')
-        SONARCLOUD_ORG = "YOUR_ORG_KEY_HERE"  // ⚠️ CAMBIAR: Tu organization key en SonarCloud
-        SONARCLOUD_PROJECT = "YOUR_PROJECT_KEY_HERE"  // ⚠️ CAMBIAR: Tu project key en SonarCloud
+        // SonarCloud Configuration (comentado hasta configurar credenciales)
+        // SONARCLOUD_TOKEN = credentials('sonarcloud-token')
+        // SONARCLOUD_ORG = "YOUR_ORG_KEY_HERE"  // ⚠️ CAMBIAR: Tu organization key en SonarCloud
+        // SONARCLOUD_PROJECT = "YOUR_PROJECT_KEY_HERE"  // ⚠️ CAMBIAR: Tu project key en SonarCloud
 
         SCAN_VULNERABILITIES = "${params.SCAN_VULNERABILITIES ?: 'false'}"
     }
@@ -745,51 +745,42 @@ pipeline {
 
     post {
         success {
-            sh '''
-                echo ""
-                echo "=========================================="
-                echo "✅ PIPELINE STAGE COMPLETADO EXITOSAMENTE"
-                echo "=========================================="
-                echo ""
-                echo "Ambiente: ${ENVIRONMENT}"
-                echo "Docker Tag: ${DOCKER_TAG}"
-                echo ""
-                echo "✓ Pruebas unitarias PASARON"
-                echo "✓ Pruebas de integración COMPLETADAS"
-                echo "✓ Pruebas de rendimiento COMPLETADAS"
-                echo "✓ Imágenes subidas a Artifact Registry"
-                echo "✓ Servicios desplegados en GKE"
-                echo ""
-                echo "Ver reporte de tests:"
-                echo "  Jenkins → Artifacts → test-reports/STAGE_TEST_REPORT.md"
-                echo ""
-                echo "Acceso a STAGE:"
-                echo "  kubectl get svc -n ${ENVIRONMENT}"
-                echo ""
-                echo "=========================================="
-            '''
+            echo """
+            ==========================================
+            ✅ PIPELINE STAGE COMPLETADO EXITOSAMENTE
+            ==========================================
+            
+            Ambiente: ${ENVIRONMENT}
+            Docker Tag: ${DOCKER_TAG}
+            
+            ✓ Pruebas unitarias PASARON
+            ✓ Pruebas de integración COMPLETADAS
+            ✓ Imágenes subidas a Artifact Registry
+            ✓ Servicios desplegados en GKE
+            
+            Acceso a STAGE:
+              kubectl get svc -n ${ENVIRONMENT}
+            
+            ==========================================
+            """
         }
 
         failure {
-            sh '''
-                echo ""
-                echo "=========================================="
-                echo "❌ PIPELINE STAGE FALLÓ"
-                echo "=========================================="
-                echo ""
-                echo "Ambiente: ${ENVIRONMENT}"
-                echo "Build: ${BUILD_NUMBER}"
-                echo ""
-                echo "Revisar logs arriba para detalles"
-                echo "=========================================="
-            '''
+            echo "❌ PIPELINE STAGE FALLÓ - Build ${BUILD_NUMBER}"
         }
 
         always {
-            archiveArtifacts(
-                artifacts: 'test-results/**,test-reports/**,performance-test-results/**,trivy-reports/**',
-                allowEmptyArchive: true
-            )
+            script {
+                // Archivar artefactos solo si existen
+                try {
+                    archiveArtifacts(
+                        artifacts: 'test-results/**,test-reports/**,performance-test-results/**,trivy-reports/**',
+                        allowEmptyArchive: true
+                    )
+                } catch (Exception e) {
+                    echo "⚠️ No se pudieron archivar artefactos: ${e.message}"
+                }
+            }
         }
     }
 }

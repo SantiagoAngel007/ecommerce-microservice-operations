@@ -506,52 +506,46 @@ pipeline {
 
     post {
         success {
-            sh '''
-                echo ""
-                echo "=========================================="
-                echo "✅ PIPELINE DEV COMPLETADO EXITOSAMENTE"
-                echo "=========================================="
-                echo ""
-                echo "Ambiente: ${ENVIRONMENT}"
-                echo "Docker Tag: ${DOCKER_TAG}"
-                echo "Región GCP: ${GCP_REGION}"
-                echo ""
-                echo "✓ Código compilado"
-                echo "✓ Tests ejecutados"
-                echo "✓ Imágenes subidas a Artifact Registry"
-                echo "✓ Servicios desplegados en GKE"
-                echo ""
-                echo "Acceso a aplicación:"
-                echo "  kubectl get svc -n ${ENVIRONMENT}"
-                echo ""
-                echo "Ver logs:"
-                echo "  kubectl logs -f deployment/api-gateway -n ${ENVIRONMENT}"
-                echo ""
-                echo "=========================================="
-            '''
+            echo """
+            ==========================================
+            ✅ PIPELINE DEV COMPLETADO EXITOSAMENTE
+            ==========================================
+            
+            Ambiente: ${ENVIRONMENT}
+            Docker Tag: ${DOCKER_TAG}
+            Región GCP: ${GCP_REGION}
+            
+            ✓ Código compilado
+            ✓ Tests ejecutados
+            ✓ Imágenes subidas a Artifact Registry
+            ✓ Servicios desplegados en GKE
+            
+            Acceso a aplicación:
+              kubectl get svc -n ${ENVIRONMENT}
+            
+            Ver logs:
+              kubectl logs -f deployment/api-gateway -n ${ENVIRONMENT}
+            
+            ==========================================
+            """
         }
 
         failure {
-            sh '''
-                echo ""
-                echo "=========================================="
-                echo "❌ PIPELINE DEV FALLÓ"
-                echo "=========================================="
-                echo ""
-                echo "Ambiente: ${ENVIRONMENT}"
-                echo "Build: ${BUILD_NUMBER}"
-                echo ""
-                echo "Revisar logs arriba para detalles"
-                echo "=========================================="
-            '''
+            echo "❌ PIPELINE DEV FALLÓ - Build ${BUILD_NUMBER}"
         }
 
         always {
-            // Guardar logs de tests
-            archiveArtifacts(
-                artifacts: 'test-*.log,trivy-reports/**',
-                allowEmptyArchive: true
-            )
+            script {
+                // Guardar logs de tests solo si existen
+                try {
+                    archiveArtifacts(
+                        artifacts: 'test-*.log,trivy-reports/**',
+                        allowEmptyArchive: true
+                    )
+                } catch (Exception e) {
+                    echo "⚠️ No se pudieron archivar artefactos: ${e.message}"
+                }
+            }
         }
     }
 }
