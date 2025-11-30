@@ -107,6 +107,7 @@ def checkoutCode() {
     """
     sh '''
         echo "🔄 Clonando repositorio de código (rama stage)..."
+        rm -rf code
         mkdir -p code
         cd code
         git clone -b stage https://github.com/SantiagoAngel007/ecommerce-microservice-backend-app.git .
@@ -120,6 +121,7 @@ def checkoutOps() {
     """
     sh '''
         echo "🔄 Clonando repositorio de operaciones..."
+        rm -rf ops
         mkdir -p ops
         cd ops
         git clone -b main https://github.com/SantiagoAngel007/ecommerce-microservice-operations.git .
