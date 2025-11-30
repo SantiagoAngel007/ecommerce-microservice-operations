@@ -333,7 +333,7 @@ EOF
                     echo "### ${service}" >> test-reports/STAGE_TEST_REPORT.md
                     echo "✅ **COMPLETED**" >> test-reports/STAGE_TEST_REPORT.md
                     echo "" >> test-reports/STAGE_TEST_REPORT.md
-                    echo "Archivo de resultados: \`${service}.csv\`" >> test-reports/STAGE_TEST_REPORT.md
+                    echo "Archivo de resultados: ${service}.csv" >> test-reports/STAGE_TEST_REPORT.md
                 fi
             done
         fi
