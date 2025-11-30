@@ -82,7 +82,10 @@ resource "google_project_service" "required_apis" {
 # GKE Cluster (Autopilot o Standard según configuración)
 resource "google_container_cluster" "primary" {
   name     = var.gke_cluster_name
-  location = var.gcp_region
+  location = var.gcp_zone != "" ? var.gcp_zone : var.gcp_region
+
+  # Zonas específicas para cluster regional (limita distribución de nodos)
+  node_locations = length(var.gke_node_locations) > 0 ? var.gke_node_locations : null
 
   # GKE Autopilot o Standard
   enable_autopilot = var.gke_autopilot_enabled

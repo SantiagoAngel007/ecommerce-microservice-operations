@@ -5,6 +5,8 @@ module "gke_stage" {
   # Load variables from terraform.tfvars
   gcp_project_id       = var.gcp_project_id
   gcp_region           = var.gcp_region
+  gcp_zone             = var.gcp_zone
+  gke_node_locations   = var.gke_node_locations
   gcp_credentials_path = var.gcp_credentials_path
   environment          = var.environment
   gke_cluster_name     = var.gke_cluster_name
@@ -35,6 +37,16 @@ variable "gcp_project_id" {
 
 variable "gcp_region" {
   type = string
+}
+
+variable "gcp_zone" {
+  type    = string
+  default = ""
+}
+
+variable "gke_node_locations" {
+  type    = list(string)
+  default = []
 }
 
 variable "gcp_credentials_path" {

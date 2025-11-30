@@ -9,6 +9,18 @@ variable "gcp_region" {
   default     = "southamerica-east1"
 }
 
+variable "gcp_zone" {
+  description = "GCP Zone for zonal cluster (overrides region if set)"
+  type        = string
+  default     = ""
+}
+
+variable "gke_node_locations" {
+  description = "Specific zones for nodes in regional cluster (empty = all zones in region)"
+  type        = list(string)
+  default     = []
+}
+
 variable "gcp_credentials_path" {
   description = "Path to GCP service account key file"
   type        = string
