@@ -32,20 +32,25 @@ def setupGCPAuth() {
 
 def getKubeConfig() {
     """
-    Obtiene kubeconfig de GKE
+    Obtiene kubeconfig de GKE y configura namespace STAGE
     """
     sh '''
         echo "🔗 Obteniendo credenciales de GKE..."
 
-        gcloud container clusters get-credentials ecommerce-${ENVIRONMENT}-cluster \
+        # Conectar al cluster compartido (mismo que DEV)
+        gcloud container clusters get-credentials ecommerce-dev-cluster \
             --region=${GCP_REGION} \
             --project=${GCP_PROJECT_ID}
+
+        # Cambiar contexto al namespace stage
+        kubectl config set-context --current --namespace=stage
 
         echo "Verificando conexión..."
         kubectl cluster-info
         kubectl get nodes
+        echo "Namespace actual: $(kubectl config view --minify | grep namespace:)"
 
-        echo "✅ Conexión a GKE establecida"
+        echo "✅ Conexión a GKE establecida (namespace: stage)"
     '''
 }
 
