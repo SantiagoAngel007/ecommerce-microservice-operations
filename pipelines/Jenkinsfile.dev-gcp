@@ -197,7 +197,10 @@ def runTrivy() {
         TRIVY_BIN="${WORKSPACE}/trivy"
         if ! command -v trivy &> /dev/null && [ ! -f "${TRIVY_BIN}" ]; then
             echo "Instalando Trivy en ${WORKSPACE}..."
-            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b ${WORKSPACE}
+            curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b ${WORKSPACE} || {
+                echo "❌ Error instalando Trivy"
+                exit 1
+            }
             chmod +x ${TRIVY_BIN}
         fi
         
@@ -209,6 +212,14 @@ def runTrivy() {
         fi
         
         echo "Usando Trivy: ${TRIVY_CMD}"
+        ${TRIVY_CMD} --version || {
+            echo "❌ Trivy no funciona correctamente"
+            exit 1
+        }
+        
+        # Configurar autenticación Docker para Artifact Registry
+        echo "Configurando autenticación para Artifact Registry..."
+        gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
 
         SERVICES="service-discovery proxy-client user-service product-service order-service payment-service favourite-service shipping-service"
 
@@ -221,10 +232,16 @@ def runTrivy() {
             IMAGE_NAME="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${service}:${DOCKER_TAG}"
 
             echo "Escaneando: ${service}"
-            ${TRIVY_CMD} image --severity HIGH,CRITICAL \
+            echo "  Imagen: ${IMAGE_NAME}"
+            
+            # Intentar escanear con timeout de 5 minutos
+            timeout 300 ${TRIVY_CMD} image --severity HIGH,CRITICAL \
                 --format json \
                 --output trivy-reports/${service}-scan.json \
-                ${IMAGE_NAME} || true
+                ${IMAGE_NAME} 2>&1 || {
+                echo "  ⚠️  Error escaneando ${service} (continuando...)"
+                continue
+            }
 
             # Contar vulnerabilidades HIGH y CRITICAL
             if [ -f "trivy-reports/${service}-scan.json" ]; then
