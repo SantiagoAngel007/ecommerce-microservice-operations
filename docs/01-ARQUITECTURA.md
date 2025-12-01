@@ -54,7 +54,7 @@ Este documento describe la arquitectura completa del sistema de e-commerce basad
 │  └────────────────────────────┬────────────────────────────────────┘   │
 │                                │                                         │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    GKE AUTOPILOT CLUSTER                         │   │
+│  │                    GKE STANDARD CLUSTER                          │   │
 │  │                   (us-central1, Regional)                        │   │
 │  │                                                                   │   │
 │  │  ┌─────────────────────────────────────────────────────────┐   │   │
@@ -119,7 +119,8 @@ Este documento describe la arquitectura completa del sistema de e-commerce basad
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-### **Screenshot**
+![alt text](image.png)
+![alt text](image-1.png)
 ```bash
 # Comando para capturar arquitectura general
 gcloud compute instances list
@@ -150,13 +151,12 @@ kubectl get all -n dev
 - Balanceo de carga cliente-side
 - Failover automático
 
-**Screenshot Requerido**
+![alt text](image-2.png)
 ```bash
 # Acceder a Eureka Dashboard
 kubectl get svc -n dev service-discovery
 # Abrir navegador en: http://<EXTERNAL-IP>:8761
 ```
-> **Archivo:** `screenshots/02-eureka-dashboard.png`  
 > **Descripción:** Dashboard de Eureka mostrando todos los servicios registrados
 
 ##### b) Config Server
@@ -192,13 +192,6 @@ kubectl get svc -n dev service-discovery
 /api/favourite-service/** → favourite-service:8800
 ```
 
-**Screenshot**
-```bash
-# Test de routing del API Gateway
-curl http://<API-GATEWAY-IP>:8200/api/user-service/users
-curl http://<API-GATEWAY-IP>:8200/api/product-service/products
-curl http://<API-GATEWAY-IP>:8200/actuator/gateway/routes | jq
-```
 
 ##### d) Zipkin (Distributed Tracing)
 - **Puerto:** 9411
@@ -206,16 +199,12 @@ curl http://<API-GATEWAY-IP>:8200/actuator/gateway/routes | jq
 - **Tecnología:** Zipkin Server
 - **Storage:** In-memory (DEV), Elasticsearch (PROD)
 
-**📸 Screenshot Requerido 4:**
+![alt text](image-3.png)
 ```bash
 # Acceder a Zipkin UI
 kubectl get svc -n dev zipkin
-# Navegar a: http://<EXTERNAL-IP>:9411
-# Hacer una transacción de prueba
-curl http://<API-GATEWAY-IP>:8200/api/order-service/orders
-# Refresh Zipkin y capturar trace
+
 ```
-> **Archivo:** `screenshots/04-zipkin-trace.png`  
 > **Descripción:** Trace de una transacción completa (user → product → order → payment)
 
 #### 2. **Business Services**
@@ -263,23 +252,7 @@ Order Service → Payment Service (procesar pago)
 Order Service → Shipping Service (crear envío)
 ```
 
-**📸 Screenshot Requerido 5:**
-```bash
-# Flujo completo de orden
-# 1. Crear orden
-curl -X POST http://<API-GATEWAY-IP>:8200/api/order-service/orders \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": 1,
-    "products": [{"id": 1, "quantity": 2}],
-    "total": 99.99
-  }'
 
-# 2. Ver logs del flujo en Zipkin
-# Capturar el trace que muestra:
-# Order Service → Product Service → Payment Service → Shipping Service
-```
-> **Archivo:** `screenshots/05-order-flow-trace.png`
 
 ##### d) Payment Service
 - **Puerto:** 8400
@@ -326,7 +299,7 @@ public PaymentResponse paymentFallback(PaymentRequest request, Exception e) {
 
 ### Google Cloud Platform Resources
 
-#### 1. **GKE Autopilot Cluster**
+#### 1. **GKE Standard Cluster**
 
 **Configuración DEV:**
 ```hcl
@@ -334,7 +307,18 @@ resource "google_container_cluster" "ecommerce_dev" {
   name     = "ecommerce-dev-cluster"
   location = "us-central1"
   
-  enable_autopilot = true
+  # GKE Standard configuration
+  initial_node_count = 1
+  
+  node_config {
+    machine_type = "e2-medium"
+    disk_size_gb = 50
+    disk_type    = "pd-standard"
+    
+    oauth_scopes = [
+      "https://www.googleapis.com/auth/cloud-platform"
+    ]
+  }
   
   ip_allocation_policy {
     cluster_ipv4_cidr_block  = "10.0.0.0/16"
@@ -352,13 +336,15 @@ resource "google_container_cluster" "ecommerce_dev" {
 ```
 
 **Características:**
-- ✅ Auto-scaling de nodos
-- ✅ Auto-repair de nodos
-- ✅ Auto-upgrade de versión K8s
-- ✅ Optimización de costos (solo pagas por pods activos)
-- ✅ Security by default (Workload Identity, Network Policies)
+- ✅ Control total sobre configuración de nodos
+- ✅ Node pools personalizables
+- ✅ Configuración manual de auto-scaling
+- ✅ Flexibilidad en machine types y recursos
+- ✅ Preemptible nodes para optimización de costos
 
-**📸 Screenshot Requerido 6:**
+![alt text](image-4.png)
+![alt text](image-5.png)
+
 ```bash
 # Detalles del cluster
 gcloud container clusters describe ecommerce-dev-cluster \
@@ -369,68 +355,44 @@ gcloud container clusters describe ecommerce-dev-cluster \
 kubectl top nodes
 kubectl describe nodes
 ```
-> **Archivo:** `screenshots/06-gke-cluster-details.png`
 
-#### 2. **VPC Networking**
-
-**Configuración:**
-```
-VPC Name: ecommerce-vpc
-Subnets:
-  - dev-subnet: 10.0.1.0/24 (us-central1)
-  - stage-subnet: 10.0.2.0/24 (us-central1)
-  - prod-subnet: 10.0.3.0/24 (us-central1, us-east1)
-
-Firewall Rules:
-  - allow-http: 0.0.0.0/0 → tcp:80,8080,8200
-  - allow-https: 0.0.0.0/0 → tcp:443
-  - allow-health-checks: GCP health checkers
-  - deny-all-ingress: default deny
-```
-
-**📸 Screenshot Requerido 7:**
-```bash
-# VPC y subnets
-gcloud compute networks describe ecommerce-vpc
-gcloud compute networks subnets list --network=ecommerce-vpc
-
-# Firewall rules
-gcloud compute firewall-rules list --filter="network:ecommerce-vpc"
-```
-> **Archivo:** `screenshots/07-vpc-networking.png`
-
-#### 3. **Artifact Registry**
+#### 2. **Artifact Registry**
 
 **Configuración:**
 ```
-Repository: ecommerce-services
+Repository: ecommerce-repo
 Format: Docker
 Location: us-central1
+Project ID: ecommerce-microservices-479317
 Description: Docker images para microservicios
 
 Images stored:
-  - service-discovery:dev-17
-  - config-server:dev-17
-  - api-gateway:dev-17
-  - user-service:dev-17
-  - product-service:dev-17
-  - order-service:dev-17
-  - payment-service:dev-17
-  - shipping-service:dev-17
-  - favourite-service:dev-17
+  - service-discovery:latest
+  - config-server:latest
+  - api-gateway:latest
+  - user-service:latest
+  - product-service:latest
+  - order-service:latest
+  - payment-service:latest
+  - shipping-service:latest
+  - favourite-service:latest
+  - zipkin:latest
 ```
 
-**📸 Screenshot Requerido 8:**
+![alt text](image-6.png)
+![alt text](image-7.png)
+
+
 ```bash
 # Listar imágenes en Artifact Registry
 gcloud artifacts docker images list \
-  us-central1-docker.pkg.dev/PROJECT_ID/ecommerce-services
+  us-central1-docker.pkg.dev/ecommerce-microservices-479317/ecommerce-repo \
+  --format="table(package,version,CREATE_TIME)" --limit=50
 
-# Detalles de una imagen
-gcloud artifacts docker images describe \
-  us-central1-docker.pkg.dev/PROJECT_ID/ecommerce-services/user-service:dev-17
+# Ver todas las versiones de una imagen
+gcloud artifacts docker tags list \
+  us-central1-docker.pkg.dev/ecommerce-microservices-479317/ecommerce-repo/user-service
 ```
-> **Archivo:** `screenshots/08-artifact-registry.png`
 
 #### 4. **Compute Engine (Jenkins)**
 
@@ -452,7 +414,9 @@ Installed Software:
   - Terraform 1.5.x
 ```
 
-**📸 Screenshot Requerido 9:**
+![alt text](image-8.png)
+![alt text](image-9.png)
+
 ```bash
 # Detalles de la VM Jenkins
 gcloud compute instances describe jenkins-server \
@@ -464,7 +428,6 @@ systemctl status jenkins
 docker --version
 kubectl version --client
 ```
-> **Archivo:** `screenshots/09-jenkins-vm.png`
 
 ---
 
@@ -528,27 +491,7 @@ resilience4j:
         maxWaitDuration: 500ms
 ```
 
-**📸 Screenshot Requerido 10:**
-```bash
-# Simular fallo y activar circuit breaker
-# 1. Hacer el servicio fallar temporalmente
-kubectl scale deployment product-service --replicas=0 -n dev
-
-# 2. Hacer requests al API Gateway
-for i in {1..20}; do
-  curl http://<API-GATEWAY-IP>:8200/api/product-service/products
-  echo ""
-done
-
-# 3. Verificar métricas de Resilience4j en Actuator
-curl http://<PRODUCT-SERVICE-IP>:8500/actuator/health | jq
-curl http://<PRODUCT-SERVICE-IP>:8500/actuator/metrics/resilience4j.circuitbreaker.state | jq
-
-# 4. Restaurar servicio
-kubectl scale deployment product-service --replicas=2 -n dev
-```
-> **Archivo:** `screenshots/10-circuit-breaker-demo.png`  
-> **Descripción:** Captura mostrando circuit breaker activado (OPEN state) y fallback funcionando
+![alt text](image-10.png)
 
 ### 2. **Feature Toggle Pattern**
 
@@ -607,44 +550,7 @@ data:
         min-amount: 100
 ```
 
-**📸 Screenshot Requerido 11:**
-```bash
-# 1. Verificar feature toggles actuales
-kubectl get configmap order-service-config -n dev -o yaml
 
-# 2. Hacer request con feature deshabilitado
-curl -X POST http://<API-GATEWAY-IP>:8200/api/order-service/orders \
-  -H "Content-Type: application/json" \
-  -d '{"expressShipping": true}' # Debe ignorarse
-
-# 3. Habilitar feature
-kubectl edit configmap order-service-config -n dev
-# Cambiar express-shipping.enabled a true
-
-# 4. Restart pods para recargar config
-kubectl rollout restart deployment order-service -n dev
-
-# 5. Hacer request nuevamente (ahora debe funcionar)
-curl -X POST http://<API-GATEWAY-IP>:8200/api/order-service/orders \
-  -H "Content-Type: application/json" \
-  -d '{"expressShipping": true}'
-```
-> **Archivo:** `screenshots/11-feature-toggle-demo.png`  
-> **Descripción:** Comparación de respuestas con feature habilitado vs deshabilitado
-
-### 3. **API Gateway Pattern**
-
-Ya documentado en sección de microservicios.
-
-### 4. **Service Registry Pattern** (Eureka)
-
-Ya documentado en sección de microservicios.
-
-### 5. **Centralized Configuration Pattern**
-
-Ya documentado en sección de microservicios.
-
----
 
 ## 🔄 Flujos de Comunicación
 
@@ -677,12 +583,6 @@ Tiempo total: ~500ms (p95)
 Puntos de observabilidad: Zipkin trace completo
 ```
 
-**📸 Screenshot Requerido 12:**
-```bash
-# Ejecutar flujo completo y capturar en Zipkin
-# Ver sección anterior de Order Service
-```
-> **Archivo:** `screenshots/12-order-flow-complete.png`
 
 ### Flujo 2: Service Discovery y Load Balancing
 
@@ -711,18 +611,19 @@ Cliente-side load balancing:
 
 ## 🤔 Decisiones Técnicas
 
-### 1. **¿Por qué GKE Autopilot en lugar de GKE Standard?**
+### 1. **¿Por qué GKE Standard en lugar de GKE Autopilot?**
 
-**Decisión:** GKE Autopilot  
+**Decisión:** GKE Standard  
 **Razones:**
-- ✅ Menor complejidad operacional (Google gestiona nodos)
-- ✅ Pay-per-pod en lugar de pay-per-node
-- ✅ Security by default (Workload Identity, Binary Authorization)
-- ✅ Auto-scaling sin configuración manual
-- ❌ Trade-off: Menos control sobre configuración de nodos
+- ✅ Mayor control sobre configuración de nodos (machine types, disk types)
+- ✅ Flexibilidad para usar preemptible nodes y reducir costos
+- ✅ Configuración personalizada de node pools
+- ✅ Sin restricciones de Autopilot (privileged containers, DaemonSets)
+- ✅ Mejor para aprendizaje y comprensión de Kubernetes
+- ❌ Trade-off: Requiere más gestión manual de nodos
 
-**Alternativa considerada:** GKE Standard  
-**Por qué no:** Mayor complejidad, requiere gestión manual de node pools
+**Alternativa considerada:** GKE Autopilot  
+**Por qué no:** Menos control sobre recursos, restricciones en configuraciones avanzadas, y costos potencialmente más altos para workloads de desarrollo
 
 ---
 
@@ -786,44 +687,5 @@ Cliente-side load balancing:
 
 ---
 
-## 📊 Screenshots de Arquitectura
 
-### Checklist de Capturas Obligatorias
 
-- [ ] **01-arquitectura-general.png** - Vista de recursos GCP
-- [ ] **02-eureka-dashboard.png** - Dashboard de Service Discovery
-- [ ] **03-api-gateway-routes.png** - Configuración de rutas
-- [ ] **04-zipkin-trace.png** - Trace de transacción distribuida
-- [ ] **05-order-flow-trace.png** - Flujo completo de orden
-- [ ] **06-gke-cluster-details.png** - Detalles del cluster
-- [ ] **07-vpc-networking.png** - VPC y subnets
-- [ ] **08-artifact-registry.png** - Imágenes Docker
-- [ ] **09-jenkins-vm.png** - VM Jenkins y servicios
-- [ ] **10-circuit-breaker-demo.png** - Circuit Breaker activado
-- [ ] **11-feature-toggle-demo.png** - Feature Toggle funcionando
-- [ ] **12-order-flow-complete.png** - Flujo end-to-end
-
-**Total:** 12 screenshots obligatorios de arquitectura
-
----
-
-## 📚 Referencias
-
-- [Martin Fowler - Microservices Architecture](https://martinfowler.com/articles/microservices.html)
-- [Spring Cloud Documentation](https://spring.io/projects/spring-cloud)
-- [Google Cloud Architecture Framework](https://cloud.google.com/architecture/framework)
-- [Kubernetes Patterns Book](https://www.redhat.com/en/resources/cloud-native-container-design-whitepaper)
-- [Resilience4j Documentation](https://resilience4j.readme.io/)
-
----
-
-## 📝 Notas Finales
-
-Este documento de arquitectura debe actualizarse cuando:
-- Se agreguen nuevos microservicios
-- Se cambien patrones de diseño
-- Se modifique la infraestructura cloud
-- Se tomen nuevas decisiones técnicas importantes
-
-**Última actualización:** Diciembre 2025  
-**Próxima revisión:** Enero 2026
