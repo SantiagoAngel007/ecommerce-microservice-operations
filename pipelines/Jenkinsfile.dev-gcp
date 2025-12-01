@@ -13,6 +13,10 @@
  * Frecuencia: Cada commit
  */
 
+// Imports para notificaciones por email automáticas
+import hudson.model.User
+import hudson.tasks.Mailer
+
 def setupGCPAuth() {
     """
     Autentica con GCP usando Workload Identity
@@ -561,6 +565,64 @@ def verifyDeployment() {
     '''
 }
 
+def getEmailRecipients() {
+    """
+    Obtiene automáticamente los destinatarios de email:
+    1. Email del último committer (Git)
+    2. Email del usuario que ejecutó el build (Jenkins)
+    Retorna lista de emails únicos separados por coma
+    """
+    try {
+        def recipients = []
+        
+        // 1. Obtener email del committer de Git
+        def gitEmail = sh(
+            script: '''
+                cd code 2>/dev/null || true
+                git log -1 --pretty=format:'%ae' 2>/dev/null || echo ""
+            ''',
+            returnStdout: true
+        ).trim()
+        
+        if (gitEmail && gitEmail.contains('@')) {
+            recipients.add(gitEmail)
+            echo "📧 Email del committer: ${gitEmail}"
+        }
+        
+        // 2. Obtener email del usuario de Jenkins que ejecutó el build
+        def jenkinsUser = currentBuild.getBuildCauses('hudson.model.Cause$UserIdCause')
+        if (jenkinsUser && jenkinsUser.size() > 0) {
+            def userId = jenkinsUser[0].userId
+            // Intentar obtener email del usuario de Jenkins
+            def user = User.getById(userId, false)
+            if (user) {
+                def emailProperty = user.getProperty(hudson.tasks.Mailer.UserProperty.class)
+                if (emailProperty && emailProperty.getAddress()) {
+                    def jenkinsEmail = emailProperty.getAddress()
+                    if (jenkinsEmail && !recipients.contains(jenkinsEmail)) {
+                        recipients.add(jenkinsEmail)
+                        echo "📧 Email del usuario Jenkins: ${jenkinsEmail}"
+                    }
+                }
+            }
+        }
+        
+        // Si no hay emails, retornar vacío
+        if (recipients.isEmpty()) {
+            echo "⚠️  No se encontraron emails automáticamente"
+            return ""
+        }
+        
+        def emailList = recipients.join(',')
+        echo "✅ Destinatarios automáticos: ${emailList}"
+        return emailList
+        
+    } catch (Exception e) {
+        echo "⚠️  Error obteniendo emails automáticos: ${e.message}"
+        return ""
+    }
+}
+
 def sendNotification(String status) {
     """
     Envía notificaciones del resultado del pipeline
@@ -714,11 +776,6 @@ pipeline {
             defaultValue: false,  // En DEV solo reporta, no bloquea
             description: 'Fallar pipeline si hay vulnerabilidades HIGH/CRITICAL'
         )
-        string(
-            name: 'EMAIL_RECIPIENTS',
-            defaultValue: '',  // Dejar vacío para deshabilitar, o agregar emails: 'team@example.com'
-            description: 'Destinatarios de notificaciones por email (separados por coma)'
-        )
     }
 
     stages {
@@ -859,15 +916,19 @@ pipeline {
                 // Enviar notificación de éxito
                 sendNotification('SUCCESS')
                 
-                // Enviar email si está configurado
-                if (params.EMAIL_RECIPIENTS?.trim()) {
+                // Obtener destinatarios automáticamente y enviar email
+                def emailRecipients = getEmailRecipients()
+                if (emailRecipients?.trim()) {
+                    echo "📧 Enviando notificación de éxito a: ${emailRecipients}"
                     emailext(
                         subject: "✅ Pipeline DEV SUCCESS - Build #${BUILD_NUMBER}",
                         body: readFile('notifications/email-notification.html'),
-                        to: params.EMAIL_RECIPIENTS,
+                        to: emailRecipients,
                         mimeType: 'text/html',
                         attachLog: false
                     )
+                } else {
+                    echo "⚠️  No se enviará email (no hay destinatarios)"
                 }
             }
         }
@@ -879,15 +940,19 @@ pipeline {
                 // Enviar notificación de fallo
                 sendNotification('FAILURE')
                 
-                // Enviar email de fallo si está configurado
-                if (params.EMAIL_RECIPIENTS?.trim()) {
+                // Obtener destinatarios automáticamente y enviar email de fallo
+                def emailRecipients = getEmailRecipients()
+                if (emailRecipients?.trim()) {
+                    echo "📧 Enviando notificación de fallo a: ${emailRecipients}"
                     emailext(
                         subject: "❌ Pipeline DEV FAILURE - Build #${BUILD_NUMBER}",
                         body: readFile('notifications/email-notification.html'),
-                        to: params.EMAIL_RECIPIENTS,
+                        to: emailRecipients,
                         mimeType: 'text/html',
                         attachLog: true  // Adjuntar log cuando falla
                     )
+                } else {
+                    echo "⚠️  No se enviará email (no hay destinatarios)"
                 }
             }
         }
