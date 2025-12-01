@@ -220,7 +220,7 @@ def validateClusterHealth() {
         # 4. VERIFICAR TIPO DE MÁQUINA
         echo ""
         echo "🔍 Verificando tipo de máquinas..."
-        MACHINE_TYPES=$(kubectl get nodes -o jsonpath='{.items[*].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "unknown")
+        MACHINE_TYPES=$(kubectl get nodes -o jsonpath='{.items[*].metadata.labels.node.kubernetes.io/instance-type}' 2>/dev/null || echo "unknown")
         echo "  Tipos detectados: ${MACHINE_TYPES}"
         
         if echo "${MACHINE_TYPES}" | grep -q "${EXPECTED_MACHINE}"; then
