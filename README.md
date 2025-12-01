@@ -208,19 +208,6 @@ ecommerce-microservice-operations/
    - Configuración de alertas de presupuesto
    - Comparación con alternativas (AWS, Azure)
 
-5. **[Guía para Screenshots](docs/05-GUIA-SCREENSHOTS.md)**
-   - 50+ capturas de pantalla requeridas
-   - Comandos exactos para cada evidencia
-   - Organización profesional de screenshots
-   - Tips para capturas de calidad
-   - Checklist de evidencias obligatorias
-
-6. **[Video Demostrativo](docs/06-VIDEO-DEMO.md)**
-   - Script completo del video (10-15 min)
-   - Escenarios a demostrar
-   - Herramientas de grabación recomendadas
-   - Guía de edición y publicación
-   - Checklist de contenido obligatorio
 
 ---
 
