@@ -420,84 +420,71 @@ def runSonarCloud() {
     '''
 }
 
-def runCodeQualityAnalysis() {
-    """
-    Análisis estático de código con Checkstyle y PMD
-    Alternativa a SonarQube que no requiere configuración externa
-    En STAGE puede bloquear el pipeline si hay demasiadas violaciones
-    """
-    sh '''
-        echo "📊 Ejecutando análisis de calidad de código (Checkstyle/PMD)..."
-        echo ""
-
-        cd code
-
-        SERVICES="user-service product-service order-service payment-service favourite-service shipping-service"
-        
-        TOTAL_VIOLATIONS=0
-        mkdir -p ../code-quality-reports
-
-        for service in $SERVICES; do
-            echo "────────────────────────────────────"
-            echo "Analizando: ${service}"
-            echo "────────────────────────────────────"
-            
-            cd ${service}
-            
-            # Ejecutar Checkstyle/PMD: Temporalmente SKIP en CI para evitar que pipelines fallen
-            # (El equipo usará SonarQube/formatting en otra etapa). Generamos archivos de report
-            echo "🔍 Checkstyle... (SKIPPED in CI)"
-            echo "SKIPPED: Checkstyle disabled in CI; use SonarQube for later analysis" > ../../code-quality-reports/${service}-checkstyle.log
-            CHECKSTYLE_EXIT=0
-
-            echo "🔍 PMD... (SKIPPED in CI)"
-            echo "SKIPPED: PMD disabled in CI; use SonarQube for later analysis" > ../../code-quality-reports/${service}-pmd.log
-            PMD_EXIT=0
-            
-            # Contar violaciones (asegurar que sean números)
-            CHECKSTYLE_VIOLATIONS=$(grep -c "\\[ERROR\\]" ../../code-quality-reports/${service}-checkstyle.log 2>/dev/null || echo "0")
-            PMD_VIOLATIONS=$(grep -c "\\[ERROR\\]" ../../code-quality-reports/${service}-pmd.log 2>/dev/null || echo "0")
-            
-            # Validar que sean números válidos antes de sumar
-            if ! echo "$CHECKSTYLE_VIOLATIONS" | grep -qE '^[0-9]+$'; then
-                CHECKSTYLE_VIOLATIONS=0
-            fi
-            if ! echo "$PMD_VIOLATIONS" | grep -qE '^[0-9]+$'; then
-                PMD_VIOLATIONS=0
-            fi
-            
-            SERVICE_TOTAL=$((CHECKSTYLE_VIOLATIONS + PMD_VIOLATIONS))
-            TOTAL_VIOLATIONS=$((TOTAL_VIOLATIONS + SERVICE_TOTAL))
-            
-            if [ $SERVICE_TOTAL -eq 0 ]; then
-                echo "✅ ${service}: Sin violaciones"
-            else
-                echo "⚠️  ${service}: ${SERVICE_TOTAL} violaciones encontradas"
-            fi
-            
-            cd ..
-            echo ""
-        done
-
-        cd ..
-        
-        echo "────────────────────────────────────"
-        echo "📋 RESUMEN DE ANÁLISIS DE CALIDAD"
-        echo "────────────────────────────────────"
-        echo "Total de violaciones: ${TOTAL_VIOLATIONS}"
-        echo ""
-        
-        if [ $TOTAL_VIOLATIONS -eq 0 ]; then
-            echo "✅ Análisis de calidad APROBADO - Sin violaciones"
-        else
-            echo "⚠️  Análisis de calidad con ${TOTAL_VIOLATIONS} violaciones"
-            echo "ℹ️  Ambiente STAGE - Pipeline continúa (revisar reportes)"
-        fi
-        
-        echo "✅ Análisis de código completado"
-        echo "   Reportes guardados en: code-quality-reports/"
-    '''
-}
+// ============================================================================
+// SONARQUBE CONFIGURATION (COMMENTED - READY FOR SETUP)
+// ============================================================================
+// def runSonarQubeAnalysis() {
+//     """
+//     Análisis de calidad de código con SonarQube para STAGE
+//     En STAGE se puede configurar para bloquear si Quality Gate falla
+//     
+//     INSTRUCCIONES DE CONFIGURACIÓN:
+//     1. Crear proyecto en SonarQube Server/Cloud
+//     2. Generar token de autenticación
+//     3. Agregar credenciales en Jenkins:
+//        - ID: 'sonarqube-token'
+//        - Tipo: Secret text
+//        - Secret: Tu token de SonarQube
+//     4. Configurar variables de entorno en pipeline (ver sección environment)
+//     5. Descomentar este stage en la sección stages
+//     """
+//     withSonarQubeEnv('SonarQube') {  // 'SonarQube' = nombre en Jenkins Global Tool Configuration
+//         sh '''
+//             echo "📊 Ejecutando análisis SonarQube..."
+//             
+//             cd code
+//             
+//             # Analizar cada microservicio
+//             SERVICES="user-service product-service order-service payment-service favourite-service shipping-service"
+//             
+//             for service in $SERVICES; do
+//                 echo ""
+//                 echo "Analizando: ${service}"
+//                 cd ${service}
+//                 
+//                 mvn sonar:sonar \
+//                     -Dsonar.projectKey=${SONARQUBE_PROJECT_KEY}-${service} \
+//                     -Dsonar.projectName="${service}" \
+//                     -Dsonar.host.url=${SONARQUBE_HOST_URL} \
+//                     -Dsonar.login=${SONARQUBE_TOKEN} \
+//                     -Dsonar.qualitygate.wait=true
+//                 
+//                 cd ..
+//             done
+//             
+//             echo "✅ Análisis SonarQube completado"
+//             echo "   URL: ${SONARQUBE_HOST_URL}/dashboard?id=${SONARQUBE_PROJECT_KEY}"
+//         '''
+//     }
+// }
+// 
+// def waitForQualityGate() {
+//     """
+//     Espera a que SonarQube complete el análisis y verifica Quality Gate
+//     En STAGE bloquea el pipeline si Quality Gate = FAILED
+//     """
+//     timeout(time: 10, unit: 'MINUTES') {
+//         def qg = waitForQualityGate()
+//         if (qg.status != 'OK') {
+//             echo "❌ Quality Gate falló: ${qg.status}"
+//             // En STAGE: bloquear deployment
+//             error "Quality Gate failed in STAGE: ${qg.status} - Deployment blocked"
+//         } else {
+//             echo "✅ Quality Gate PASSED - Deployment allowed"
+//         }
+//     }
+// }
+// ============================================================================
 
 def generateSemanticVersion() {
     """
@@ -1088,15 +1075,27 @@ pipeline {
             }
         }
 
-        stage('9. Code Quality Analysis (Checkstyle/PMD)') {
-            steps {
-                script {
-                    runCodeQualityAnalysis()
-                }
-            }
-        }
+        // ============================================================================
+        // SONARQUBE STAGE (COMMENTED - READY TO ENABLE)
+        // ============================================================================
+        // stage('9. SonarQube Analysis') {
+        //     steps {
+        //         script {
+        //             runSonarQubeAnalysis()
+        //         }
+        //     }
+        // }
+        //
+        // stage('10. Quality Gate') {
+        //     steps {
+        //         script {
+        //             waitForQualityGate()
+        //         }
+        //     }
+        // }
+        // ============================================================================
 
-        stage('10. Generate Semantic Version') {
+        stage('9. Generate Semantic Version') {
             steps {
                 script {
                     generateSemanticVersion()
@@ -1108,7 +1107,7 @@ pipeline {
             }
         }
 
-        stage('11. Build & Push Images') {
+        stage('10. Build & Push Images') {
             steps {
                 script {
                     buildAndPushImages()
@@ -1116,7 +1115,7 @@ pipeline {
             }
         }
 
-        stage('12. Security Scan (Trivy)') {
+        stage('11. Security Scan (Trivy)') {
             when {
                 expression { params.SCAN_VULNERABILITIES == true }
             }
@@ -1127,7 +1126,7 @@ pipeline {
             }
         }
 
-        stage('13. Approve Deployment') {
+        stage('12. Approve Deployment') {
             steps {
                 script {
                     approveDeployment()
@@ -1135,7 +1134,7 @@ pipeline {
             }
         }
 
-        stage('14. Deploy to Kubernetes') {
+        stage('13. Deploy to Kubernetes') {
             steps {
                 script {
                     deployToKubernetes()
@@ -1143,7 +1142,7 @@ pipeline {
             }
         }
 
-        stage('15. Verify Deployment') {
+        stage('14. Verify Deployment') {
             steps {
                 script {
                     verifyDeployment()
@@ -1151,7 +1150,7 @@ pipeline {
             }
         }
 
-        stage('16. Performance Tests (Post-Deploy)') {
+        stage('15. Performance Tests (Post-Deploy)') {
             steps {
                 script {
                     runPerformanceTests()
