@@ -54,6 +54,290 @@ def getKubeConfig() {
     '''
 }
 
+def validateClusterHealth() {
+    """
+    Valida que el cluster GKE tiene nodos listos y recursos suficientes
+    CRÍTICO: Evita desplegar en clusters sin nodos o con recursos insuficientes
+    
+    Requisitos por ambiente:
+    - DEV: Mínimo 1 nodo (e2-medium: 2 vCPU, 4GB RAM)
+    - STAGE: Mínimo 2 nodos (e2-standard-2: 2 vCPU, 8GB RAM)
+    - PROD: Mínimo 3 nodos (e2-standard-4: 4 vCPU, 16GB RAM)
+    """
+    sh '''
+        echo "🏥 Validando salud del cluster ${ENVIRONMENT}..."
+        echo "=================================================="
+        
+        # Configuración de requisitos por ambiente
+        case "${ENVIRONMENT}" in
+            dev)
+                MIN_NODES=1
+                EXPECTED_MACHINE="e2-medium"
+                ZONE_TYPE="zonal"
+                CLUSTER_ZONE="us-central1-a"
+                CLUSTER_NAME="ecommerce-dev-cluster"
+                ;;
+            stage)
+                MIN_NODES=2
+                EXPECTED_MACHINE="e2-standard-2"
+                ZONE_TYPE="regional"
+                CLUSTER_ZONE="us-central1"
+                CLUSTER_NAME="ecommerce-stage-cluster"
+                ;;
+            prod)
+                MIN_NODES=3
+                EXPECTED_MACHINE="e2-standard-4"
+                ZONE_TYPE="regional"
+                CLUSTER_ZONE="us-central1"
+                CLUSTER_NAME="ecommerce-prod-cluster"
+                ;;
+            *)
+                echo "⚠️  Ambiente desconocido: ${ENVIRONMENT}"
+                MIN_NODES=2
+                EXPECTED_MACHINE="unknown"
+                ZONE_TYPE="regional"
+                CLUSTER_ZONE="us-central1"
+                CLUSTER_NAME="ecommerce-${ENVIRONMENT}-cluster"
+                ;;
+        esac
+        
+        echo "📋 Requisitos para ambiente ${ENVIRONMENT}:"
+        echo "  - Nodos mínimos: ${MIN_NODES}"
+        echo "  - Tipo de máquina esperado: ${EXPECTED_MACHINE}"
+        echo "  - Tipo de cluster: ${ZONE_TYPE}"
+        echo "  - Zona/Región: ${CLUSTER_ZONE}"
+        echo "  - Cluster: ${CLUSTER_NAME}"
+        echo ""
+        
+        # 1. VERIFICAR ESTADO DEL CLUSTER
+        echo "🔍 Verificando estado del cluster..."
+        if [ "${ZONE_TYPE}" = "zonal" ]; then
+            CLUSTER_STATUS=$(gcloud container clusters describe ${CLUSTER_NAME} \
+                --zone=${CLUSTER_ZONE} \
+                --format="get(status)" 2>/dev/null || echo "NOT_FOUND")
+        else
+            CLUSTER_STATUS=$(gcloud container clusters describe ${CLUSTER_NAME} \
+                --region=${CLUSTER_ZONE} \
+                --format="get(status)" 2>/dev/null || echo "NOT_FOUND")
+        fi
+        
+        if [ "${CLUSTER_STATUS}" = "NOT_FOUND" ]; then
+            echo "❌ ERROR: Cluster ${CLUSTER_NAME} no existe"
+            exit 1
+        fi
+        
+        if [ "${CLUSTER_STATUS}" != "RUNNING" ]; then
+            echo "❌ ERROR: Cluster no está en estado RUNNING"
+            echo "  Estado actual: ${CLUSTER_STATUS}"
+            exit 1
+        fi
+        
+        echo "  ✅ Cluster estado: ${CLUSTER_STATUS}"
+        
+        # 2. VERIFICAR NÚMERO DE NODOS
+        echo ""
+        echo "🔍 Verificando nodos del cluster..."
+        NODE_COUNT=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)
+        echo "  Nodos detectados: ${NODE_COUNT}"
+        echo "  Nodos requeridos: ${MIN_NODES}"
+        
+        if [ "${NODE_COUNT}" -eq 0 ]; then
+            echo ""
+            echo "❌ ERROR CRÍTICO: Cluster NO tiene nodos disponibles"
+            echo ""
+            echo "🔧 SOLUCIÓN: Escalar el cluster ahora:"
+            if [ "${ZONE_TYPE}" = "zonal" ]; then
+                echo "  gcloud container clusters resize ${CLUSTER_NAME} \\"
+                echo "    --num-nodes=${MIN_NODES} \\"
+                echo "    --zone=${CLUSTER_ZONE} \\"
+                echo "    --quiet"
+            else
+                echo "  gcloud container clusters resize ${CLUSTER_NAME} \\"
+                echo "    --num-nodes=${MIN_NODES} \\"
+                echo "    --region=${CLUSTER_ZONE} \\"
+                echo "    --quiet"
+            fi
+            echo ""
+            echo "⏳ Los nodos tardan ~2-3 minutos en estar listos"
+            exit 1
+        fi
+        
+        if [ "${NODE_COUNT}" -lt "${MIN_NODES}" ]; then
+            echo ""
+            echo "❌ ERROR: Nodos insuficientes para ambiente ${ENVIRONMENT}"
+            echo "  Detectados: ${NODE_COUNT}"
+            echo "  Requeridos: ${MIN_NODES}"
+            echo ""
+            echo "🔧 SOLUCIÓN: Escalar a ${MIN_NODES} nodos:"
+            if [ "${ZONE_TYPE}" = "zonal" ]; then
+                echo "  gcloud container clusters resize ${CLUSTER_NAME} \\"
+                echo "    --num-nodes=${MIN_NODES} \\"
+                echo "    --zone=${CLUSTER_ZONE} \\"
+                echo "    --quiet"
+            else
+                echo "  gcloud container clusters resize ${CLUSTER_NAME} \\"
+                echo "    --num-nodes=${MIN_NODES} \\"
+                echo "    --region=${CLUSTER_ZONE} \\"
+                echo "    --quiet"
+            fi
+            exit 1
+        fi
+        
+        # 3. VERIFICAR QUE TODOS LOS NODOS ESTÁN READY
+        echo ""
+        echo "🔍 Verificando estado de nodos..."
+        READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " || echo "0")
+        NOT_READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready " | wc -l)
+        
+        echo "  Nodos Ready: ${READY_NODES}"
+        echo "  Nodos Not Ready: ${NOT_READY}"
+        
+        if [ "${NOT_READY}" -gt 0 ]; then
+            echo ""
+            echo "⚠️  ADVERTENCIA: Hay nodos que NO están Ready"
+            kubectl get nodes
+            echo ""
+            echo "⏳ Esperando 90 segundos a que los nodos estén listos..."
+            sleep 90
+            
+            # Re-verificar
+            NOT_READY=$(kubectl get nodes --no-headers 2>/dev/null | grep -v " Ready " | wc -l)
+            READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " || echo "0")
+            
+            if [ "${NOT_READY}" -gt 0 ]; then
+                echo ""
+                echo "❌ ERROR: ${NOT_READY} nodos aún NO están Ready después de 90s"
+                kubectl get nodes
+                kubectl describe nodes | grep -A 5 "Conditions:"
+                exit 1
+            fi
+            
+            echo "  ✅ Todos los nodos ahora están Ready"
+        fi
+        
+        echo "  ✅ Todos los ${READY_NODES} nodos están Ready"
+        
+        # 4. VERIFICAR TIPO DE MÁQUINA
+        echo ""
+        echo "🔍 Verificando tipo de máquinas..."
+        MACHINE_TYPES=$(kubectl get nodes -o jsonpath='{.items[*].metadata.labels.node\.kubernetes\.io/instance-type}' 2>/dev/null || echo "unknown")
+        echo "  Tipos detectados: ${MACHINE_TYPES}"
+        
+        if echo "${MACHINE_TYPES}" | grep -q "${EXPECTED_MACHINE}"; then
+            echo "  ✅ Tipo de máquina correcto: ${EXPECTED_MACHINE}"
+        else
+            echo "  ⚠️  Tipo de máquina diferente al esperado (${EXPECTED_MACHINE})"
+        fi
+        
+        # 5. MOSTRAR DETALLES DE NODOS
+        echo ""
+        echo "📊 Detalles de nodos:"
+        kubectl get nodes -o wide
+        
+        # 6. VERIFICAR RECURSOS DISPONIBLES
+        echo ""
+        echo "🔍 Verificando recursos disponibles..."
+        
+        # CPU y Memoria totales
+        TOTAL_CPU=$(kubectl get nodes -o jsonpath='{.items[*].status.capacity.cpu}' | tr ' ' '+' | bc 2>/dev/null || echo "N/A")
+        TOTAL_MEMORY=$(kubectl get nodes -o jsonpath='{.items[*].status.capacity.memory}' | head -1 | sed 's/Ki$//' 2>/dev/null || echo "N/A")
+        
+        if [ "${TOTAL_CPU}" != "N/A" ]; then
+            TOTAL_MEMORY_GB=$(echo "scale=2; ${TOTAL_MEMORY} / 1024 / 1024" | bc 2>/dev/null || echo "N/A")
+            echo "  Capacidad total del cluster:"
+            echo "    CPU: ${TOTAL_CPU} vCPUs"
+            echo "    Memoria: ${TOTAL_MEMORY_GB} GB"
+        fi
+        
+        # Uso actual de recursos (si Metrics Server está disponible)
+        echo ""
+        echo "📊 Uso actual de recursos:"
+        if kubectl top nodes 2>/dev/null; then
+            echo "  ✅ Metrics Server disponible"
+            
+            # Verificar si algún nodo está sobrecargado
+            kubectl top nodes --no-headers 2>/dev/null | while read node cpu mem; do
+                cpu_pct=$(echo $cpu | sed 's/%$//')
+                mem_pct=$(echo $mem | sed 's/%$//')
+                
+                if [ "${cpu_pct}" -gt 80 ]; then
+                    echo "  ⚠️  Nodo ${node} con CPU alta: ${cpu}%"
+                fi
+                if [ "${mem_pct}" -gt 85 ]; then
+                    echo "  ⚠️  Nodo ${node} con Memoria alta: ${mem}%"
+                fi
+            done
+        else
+            echo "  ℹ️  Metrics Server no disponible (no es crítico)"
+        fi
+        
+        # 7. VERIFICAR PODS PREVIOS EN EL NAMESPACE
+        echo ""
+        echo "🔍 Verificando namespace ${ENVIRONMENT}..."
+        if kubectl get namespace ${ENVIRONMENT} 2>/dev/null; then
+            echo "  ✅ Namespace existe"
+            
+            # Contar pods en estado Pending
+            PENDING_PODS=$(kubectl get pods -n ${ENVIRONMENT} --no-headers 2>/dev/null | grep -c "Pending" || echo "0")
+            if [ "${PENDING_PODS}" -gt 0 ]; then
+                echo ""
+                echo "⚠️  ADVERTENCIA: Hay ${PENDING_PODS} pods en estado Pending"
+                echo "  Esto puede indicar falta de recursos o problemas previos"
+                echo ""
+                echo "  Pods Pending:"
+                kubectl get pods -n ${ENVIRONMENT} --no-headers 2>/dev/null | grep "Pending" | awk '{print "    - " $1 " (" $3 ")"}'
+                echo ""
+                echo "  🔧 Limpiando pods Pending automáticamente..."
+                kubectl delete pods -n ${ENVIRONMENT} --field-selector=status.phase=Pending --ignore-not-found=true
+                echo "  ✅ Pods Pending eliminados"
+            fi
+            
+            # Mostrar estado general de pods
+            echo ""
+            echo "  Estado actual de pods:"
+            kubectl get pods -n ${ENVIRONMENT} --no-headers 2>/dev/null | awk '{print $3}' | sort | uniq -c | awk '{print "    " $2 ": " $1}' || echo "    (sin pods)"
+        else
+            echo "  ℹ️  Namespace no existe, será creado durante el deploy"
+        fi
+        
+        # 8. VERIFICAR NODE POOLS
+        echo ""
+        echo "🔍 Verificando node pools..."
+        if [ "${ZONE_TYPE}" = "zonal" ]; then
+            gcloud container node-pools list \
+                --cluster=${CLUSTER_NAME} \
+                --zone=${CLUSTER_ZONE} \
+                --format="table(name,machineType,diskSizeGb,nodeVersion)" 2>/dev/null || echo "  Error al obtener node pools"
+        else
+            gcloud container node-pools list \
+                --cluster=${CLUSTER_NAME} \
+                --region=${CLUSTER_ZONE} \
+                --format="table(name,machineType,diskSizeGb,nodeVersion)" 2>/dev/null || echo "  Error al obtener node pools"
+        fi
+        
+        # 9. RESUMEN FINAL
+        echo ""
+        echo "=================================================="
+        echo "✅ VALIDACIÓN DE CLUSTER COMPLETADA"
+        echo "=================================================="
+        echo "Ambiente: ${ENVIRONMENT} (${ZONE_TYPE})"
+        echo "Cluster: ${CLUSTER_NAME}"
+        echo "Estado: ${CLUSTER_STATUS}"
+        echo "Nodos Ready: ${READY_NODES}/${NODE_COUNT} (mínimo: ${MIN_NODES})"
+        echo "Tipo de máquina: ${EXPECTED_MACHINE}"
+        echo "Namespace: ${ENVIRONMENT}"
+        echo ""
+        
+        if [ "${READY_NODES}" -ge "${MIN_NODES}" ]; then
+            echo "🎯 Cluster listo para recibir deploy"
+        else
+            echo "❌ Cluster NO cumple requisitos mínimos"
+            exit 1
+        fi
+        echo "=================================================="
+    '''
+}
+
 def validateTerraformOutputs() {
     """
     Valida infraestructura de Terraform (enfoque modular)
@@ -1043,7 +1327,15 @@ pipeline {
             }
         }
 
-        stage('5. Validate Infrastructure') {
+        stage('5. Validate Cluster Health') {
+            steps {
+                script {
+                    validateClusterHealth()
+                }
+            }
+        }
+
+        stage('6. Validate Infrastructure') {
             steps {
                 script {
                     validateTerraformOutputs()
@@ -1051,7 +1343,7 @@ pipeline {
             }
         }
 
-        stage('6. Unit Tests') {
+        stage('7. Unit Tests') {
             steps {
                 script {
                     runUnitTests()
@@ -1059,7 +1351,7 @@ pipeline {
             }
         }
 
-        stage('7. Integration Tests') {
+        stage('8. Integration Tests') {
             steps {
                 script {
                     runIntegrationTests()
@@ -1067,7 +1359,7 @@ pipeline {
             }
         }
 
-        stage('8. Generate Test Report') {
+        stage('9. Generate Test Report') {
             steps {
                 script {
                     generateTestReport()
@@ -1095,7 +1387,7 @@ pipeline {
         // }
         // ============================================================================
 
-        stage('9. Generate Semantic Version') {
+        stage('10. Generate Semantic Version') {
             steps {
                 script {
                     generateSemanticVersion()
@@ -1107,7 +1399,7 @@ pipeline {
             }
         }
 
-        stage('10. Build & Push Images') {
+        stage('11. Build & Push Images') {
             steps {
                 script {
                     buildAndPushImages()
@@ -1115,7 +1407,7 @@ pipeline {
             }
         }
 
-        stage('11. Security Scan (Trivy)') {
+        stage('12. Security Scan (Trivy)') {
             when {
                 expression { params.SCAN_VULNERABILITIES == true }
             }
@@ -1126,7 +1418,7 @@ pipeline {
             }
         }
 
-        stage('12. Approve Deployment') {
+        stage('13. Approve Deployment') {
             steps {
                 script {
                     approveDeployment()
@@ -1134,7 +1426,7 @@ pipeline {
             }
         }
 
-        stage('13. Deploy to Kubernetes') {
+        stage('14. Deploy to Kubernetes') {
             steps {
                 script {
                     deployToKubernetes()
@@ -1142,7 +1434,7 @@ pipeline {
             }
         }
 
-        stage('14. Verify Deployment') {
+        stage('15. Verify Deployment') {
             steps {
                 script {
                     verifyDeployment()
@@ -1150,7 +1442,7 @@ pipeline {
             }
         }
 
-        stage('15. Performance Tests (Post-Deploy)') {
+        stage('16. Performance Tests (Post-Deploy)') {
             steps {
                 script {
                     runPerformanceTests()
