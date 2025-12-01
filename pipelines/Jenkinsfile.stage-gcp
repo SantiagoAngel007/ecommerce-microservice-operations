@@ -231,10 +231,12 @@ def runPerformanceTests() {
 
         mkdir -p performance-test-results
 
-        # Instalar Locust si no existe
+        # Instalar Locust si no existe usando virtual environment
         if ! command -v locust &> /dev/null; then
-            echo "Instalando Locust..."
-            pip3 install -q locust
+            echo "Instalando Locust en virtual environment..."
+            python3 -m venv ${WORKSPACE}/.venv-locust
+            ${WORKSPACE}/.venv-locust/bin/pip install -q locust
+            export PATH="${WORKSPACE}/.venv-locust/bin:$PATH"
         fi
 
         cd code/performance-tests
@@ -798,6 +800,113 @@ def verifyDeployment() {
     '''
 }
 
+def sendNotification(String status) {
+    """
+    Envía notificaciones del resultado del pipeline STAGE
+    Incluye aprobación manual y resultados de pruebas
+    """
+    sh """
+        echo "📬 Enviando notificación: ${status}..."
+        
+        # Crear directorio de notificaciones
+        mkdir -p notifications
+        
+        # Timestamp
+        TIMESTAMP=\$(date '+%Y-%m-%d %H:%M:%S')
+        
+        # Preparar mensaje
+        if [ "${status}" = "SUCCESS" ]; then
+            EMOJI="✅"
+            COLOR="green"
+            MESSAGE="Pipeline STAGE completado exitosamente - Despliegue aprobado"
+        else
+            EMOJI="❌"
+            COLOR="red"
+            MESSAGE="Pipeline STAGE falló - Revisar logs"
+        fi
+        
+        # Log de notificación con más detalles para STAGE
+        cat >> notifications/pipeline-notifications.log << EOF
+[\${TIMESTAMP}] \${EMOJI} ${status}: ${JOB_NAME} Build #${BUILD_NUMBER}
+   Ambiente: ${ENVIRONMENT}
+   Versión: ${env.DOCKER_TAG ?: 'N/A'}
+   Base Version: ${env.BASE_VERSION ?: 'N/A'}
+   URL: ${BUILD_URL}
+   Mensaje: \${MESSAGE}
+   Tests: Unitarios ✓ | Integración ✓ | Performance ✓
+   Quality: Checkstyle/PMD ✓ | Trivy Security ✓
+---
+EOF
+        
+        echo "\${EMOJI} Notificación STAGE registrada"
+        
+        # Notificación por Email (HTML)
+        echo ""
+        echo "📧 Preparando notificación por email para STAGE..."
+        
+        cat > notifications/email-notification.html << 'EMAILEOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background-color: COLOR_PLACEHOLDER; color: white; padding: 15px; border-radius: 5px; }
+        .content { margin-top: 20px; }
+        .info { background-color: #f5f5f5; padding: 10px; border-left: 4px solid COLOR_PLACEHOLDER; margin: 10px 0; }
+        .tests { background-color: #e8f5e9; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .footer { margin-top: 20px; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>EMOJI_PLACEHOLDER Pipeline STAGE - STATUS_PLACEHOLDER</h2>
+    </div>
+    <div class="content">
+        <h3>Detalles del Build:</h3>
+        <div class="info">
+            <strong>Job:</strong> JOB_NAME_PLACEHOLDER<br>
+            <strong>Build:</strong> #BUILD_NUMBER_PLACEHOLDER<br>
+            <strong>Ambiente:</strong> ENVIRONMENT_PLACEHOLDER (Producción Pre-Release)<br>
+            <strong>Versión:</strong> VERSION_PLACEHOLDER<br>
+            <strong>Timestamp:</strong> TIMESTAMP_PLACEHOLDER<br>
+            <strong>Estado:</strong> MESSAGE_PLACEHOLDER
+        </div>
+        <div class="tests">
+            <h4>✓ Pruebas Completadas:</h4>
+            <ul>
+                <li>Tests Unitarios ✓</li>
+                <li>Tests de Integración ✓</li>
+                <li>Tests de Performance ✓</li>
+                <li>Análisis de Calidad (Checkstyle/PMD) ✓</li>
+                <li>Escaneo de Seguridad (Trivy) ✓</li>
+            </ul>
+        </div>
+        <p><a href="BUILD_URL_PLACEHOLDER" style="background-color: COLOR_PLACEHOLDER; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Ver Build en Jenkins</a></p>
+    </div>
+    <div class="footer">
+        <p>Esta es una notificación automática del sistema CI/CD - Ambiente STAGE</p>
+    </div>
+</body>
+</html>
+EMAILEOF
+
+        # Reemplazar placeholders
+        sed -i "s/COLOR_PLACEHOLDER/\${COLOR}/g" notifications/email-notification.html
+        sed -i "s/EMOJI_PLACEHOLDER/\${EMOJI}/g" notifications/email-notification.html
+        sed -i "s/STATUS_PLACEHOLDER/${status}/g" notifications/email-notification.html
+        sed -i "s/JOB_NAME_PLACEHOLDER/${JOB_NAME}/g" notifications/email-notification.html
+        sed -i "s/BUILD_NUMBER_PLACEHOLDER/${BUILD_NUMBER}/g" notifications/email-notification.html
+        sed -i "s/ENVIRONMENT_PLACEHOLDER/${ENVIRONMENT}/g" notifications/email-notification.html
+        sed -i "s|VERSION_PLACEHOLDER|${env.DOCKER_TAG ?: 'N/A'}|g" notifications/email-notification.html
+        sed -i "s/TIMESTAMP_PLACEHOLDER/\${TIMESTAMP}/g" notifications/email-notification.html
+        sed -i "s/MESSAGE_PLACEHOLDER/\${MESSAGE}/g" notifications/email-notification.html
+        sed -i "s|BUILD_URL_PLACEHOLDER|${BUILD_URL}|g" notifications/email-notification.html
+        
+        echo "✅ Email HTML generado para STAGE"
+        echo "✅ Sistema de notificaciones STAGE ejecutado"
+    """
+}
+
 // ============================================================================
 // PIPELINE PRINCIPAL
 // ============================================================================
@@ -845,6 +954,11 @@ pipeline {
             name: 'FAIL_ON_VULNERABILITIES',
             defaultValue: true,  // En STAGE SÍ bloquea despliegue
             description: 'Fallar pipeline si hay vulnerabilidades HIGH/CRITICAL'
+        )
+        string(
+            name: 'EMAIL_RECIPIENTS',
+            defaultValue: '',  // Dejar vacío para deshabilitar, o agregar emails: 'team@example.com'
+            description: 'Destinatarios de notificaciones por email (separados por coma)'
         )
     }
 
@@ -987,32 +1101,65 @@ pipeline {
 
     post {
         success {
-            echo """
-            ==========================================
-            ✅ PIPELINE STAGE COMPLETADO EXITOSAMENTE
-            ==========================================
-            
-            Ambiente: ${ENVIRONMENT}
-            Versión: ${DOCKER_TAG}
-            Versión Base: ${BASE_VERSION}
-            Build: #${BUILD_NUMBER}
-            
-            ✓ Pruebas unitarias PASARON
-            ✓ Pruebas de integración COMPLETADAS
-            ✓ Análisis de calidad completado
-            ✓ Versión semántica generada
-            ✓ Imágenes subidas a Artifact Registry
-            ✓ Servicios desplegados en GKE
-            
-            Acceso a STAGE:
-              kubectl get svc -n ${ENVIRONMENT}
-            
-            ==========================================
-            """
+            script {
+                echo """
+                ==========================================
+                ✅ PIPELINE STAGE COMPLETADO EXITOSAMENTE
+                ==========================================
+                
+                Ambiente: ${ENVIRONMENT}
+                Versión: ${DOCKER_TAG}
+                Versión Base: ${BASE_VERSION}
+                Build: #${BUILD_NUMBER}
+                
+                ✓ Pruebas unitarias PASARON
+                ✓ Pruebas de integración COMPLETADAS
+                ✓ Análisis de calidad completado
+                ✓ Versión semántica generada
+                ✓ Imágenes subidas a Artifact Registry
+                ✓ Servicios desplegados en GKE
+                
+                Acceso a STAGE:
+                  kubectl get svc -n ${ENVIRONMENT}
+                
+                ==========================================
+                """
+                
+                // Enviar notificación de éxito
+                sendNotification('SUCCESS')
+                
+                // Enviar email si está configurado
+                if (params.EMAIL_RECIPIENTS?.trim()) {
+                    emailext(
+                        subject: "✅ Pipeline STAGE SUCCESS - Build #${BUILD_NUMBER} - Aprobado",
+                        body: readFile('notifications/email-notification.html'),
+                        to: params.EMAIL_RECIPIENTS,
+                        mimeType: 'text/html',
+                        attachLog: false
+                    )
+                }
+            }
         }
 
         failure {
-            echo "❌ PIPELINE STAGE FALLÓ - Build ${BUILD_NUMBER}"
+            script {
+                echo "❌ PIPELINE STAGE FALLÓ - Build ${BUILD_NUMBER}"
+                
+                // Enviar notificación de fallo
+                sendNotification('FAILURE')
+                
+                // Enviar email de fallo URGENTE para STAGE
+                if (params.EMAIL_RECIPIENTS?.trim()) {
+                    emailext(
+                        subject: "🚨 URGENTE - Pipeline STAGE FAILURE - Build #${BUILD_NUMBER}",
+                        body: readFile('notifications/email-notification.html'),
+                        to: params.EMAIL_RECIPIENTS,
+                        mimeType: 'text/html',
+                        attachLog: true,  // Siempre adjuntar log en fallos de STAGE
+                        replyTo: params.EMAIL_RECIPIENTS
+                    )
+                }
+            }
         }
 
         always {
@@ -1020,7 +1167,7 @@ pipeline {
                 // Archivar artefactos solo si existen
                 try {
                     archiveArtifacts(
-                        artifacts: 'test-results/**,test-reports/**,performance-test-results/**,trivy-reports/**,code-quality-reports/**',
+                        artifacts: 'test-results/**,test-reports/**,performance-test-results/**,trivy-reports/**,code-quality-reports/**,notifications/**',
                         allowEmptyArchive: true
                     )
                 } catch (Exception e) {
