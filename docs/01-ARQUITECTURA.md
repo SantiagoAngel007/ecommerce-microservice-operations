@@ -193,16 +193,6 @@ Order Service → Shipping Service (crear envío)
   - `POST /favourites` - Agregar favorito
   - `DELETE /favourites/{id}` - Eliminar favorito
 
-## Patrones de diseño
-
-**Circuit Breaker:**
-
-El patrón de diseño Circuit Breaker implementado en el proyecto actúa como un mecanismo de protección entre los microservicios, específicamente en la comunicación desde el api gateway hacia los servicios de productos, pagos y usuarios.
-
-Su implementación se realizó usando el filtro nativo de Resilience4j integrado con Spring Cloud Gateway, el cual envuelve las peticiones que coinciden con las rutas registradas en el descubrimiento de servicios mediante Eureka.
-
-
-Desde Grafana se puede evidenciar el estado de cada uno de los Cir
 
 
 ---
@@ -347,30 +337,8 @@ kubectl version --client
 
 ### 1. **Circuit Breaker Pattern** (Resilience4j)
 
-**Implementación en Product Service:**
+**Implementación en api-gateway:**
 
-```java
-@Service
-public class ProductService {
-    
-    @CircuitBreaker(
-        name = "productService",
-        fallbackMethod = "getProductsFallback"
-    )
-    @Retry(name = "productService", fallbackMethod = "getProductsFallback")
-    @Bulkhead(name = "productService")
-    public List<Product> getProducts() {
-        // Lógica de negocio
-        return productRepository.findAll();
-    }
-    
-    // Fallback method
-    public List<Product> getProductsFallback(Exception e) {
-        log.warn("Circuit breaker activated for getProducts: {}", e.getMessage());
-        return getCachedProducts(); // Retornar productos en caché
-    }
-}
-```
 
 **Configuración (application.yml):**
 
@@ -407,40 +375,9 @@ resilience4j:
 
 ### 2. **Feature Toggle Pattern**
 
-**Implementación en Order Service:**
+**Implementación en ¨Product Service:**
 
-```java
-@RestController
-@RequestMapping("/orders")
-public class OrderController {
-    
-    @Value("${features.express-shipping.enabled:false}")
-    private boolean expressShippingEnabled;
-    
-    @Value("${features.payment-installments.enabled:false}")
-    private boolean paymentInstallmentsEnabled;
-    
-    @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(@RequestBody OrderRequest request) {
-        
-        // Feature toggle para envío express
-        if (expressShippingEnabled && request.isExpressShipping()) {
-            order.setShippingType(ShippingType.EXPRESS);
-            order.setShippingCost(calculateExpressCost());
-        } else {
-            order.setShippingType(ShippingType.STANDARD);
-            order.setShippingCost(calculateStandardCost());
-        }
-        
-        // Feature toggle para pagos en cuotas
-        if (paymentInstallmentsEnabled && request.getInstallments() > 1) {
-            paymentRequest.setInstallments(request.getInstallments());
-        }
-        
-        return orderService.processOrder(order);
-    }
-}
-```
+
 
 **Configuración dinámica (ConfigMap K8s):**
 
@@ -462,61 +399,11 @@ data:
         min-amount: 100
 ```
 
-
-
-## 🔄 Flujos de Comunicación
-
-### Flujo 1: Creación de Orden Completa
-
 ```
-┌────────┐     ┌────────────┐     ┌──────────────┐     ┌─────────────┐
-│ Client │────▶│ API Gateway│────▶│ Order Service│────▶│User Service │
-└────────┘     └────────────┘     └──────┬───────┘     └─────────────┘
-                                          │
-                                          │ 2. Verificar stock
-                                          ▼
-                                   ┌───────────────┐
-                                   │Product Service│
-                                   └───────┬───────┘
-                                          │
-                                          │ 3. Procesar pago
-                                          ▼
-                                   ┌───────────────┐
-                                   │Payment Service│
-                                   └───────┬───────┘
-                                          │
-                                          │ 4. Crear envío
-                                          ▼
-                                   ┌───────────────┐
-                                   │Shipping Service│
-                                   └───────────────┘
-
-Tiempo total: ~500ms (p95)
-Puntos de observabilidad: Zipkin trace completo
+feature:
+  product:
+    count-enabled: false
 ```
-
-
-### Flujo 2: Service Discovery y Load Balancing
-
-```
-┌─────────────┐          ┌────────────────┐          ┌─────────────┐
-│Order Service│         │Service Discovery│         │Product Svc  │
-│  (Startup)  │────1───▶│    (Eureka)     │◀────2───│ Instance 1  │
-└─────────────┘         └────────────────┘         └─────────────┘
-                                ▲                            ▲
-                                │                            │
-                                │         3. Heartbeat       │
-                                │            every 30s       │
-                                │                            │
-                        ┌───────┴──────┐          ┌────────┴────────┐
-                        │Product Svc   │          │Product Svc      │
-                        │Instance 2    │          │Instance 3       │
-                        └──────────────┘          └─────────────────┘
-
-Cliente-side load balancing:
-  - Round robin por defecto
-  - Health-aware routing
-  - Automatic failover
 ```
 
 ---

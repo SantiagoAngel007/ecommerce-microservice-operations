@@ -1036,7 +1036,7 @@ kubectl create clusterrolebinding jenkins-admin \
 
 ---
 
-## 📞 Soporte
+## Soporte
 
 Si encuentras problemas no cubiertos en esta guía:
 
@@ -1056,15 +1056,6 @@ Si encuentras problemas no cubiertos en esta guía:
    - GitHub Issues: [Reportar problema](https://github.com/SantiagoAngel007/ecommerce-microservice-operations/issues)
 
 ---
-
-## 📚 Próximos Pasos
-
-Una vez completada la instalación:
-
-1. ✅ **[Manual de Operaciones](03-MANUAL-OPERACIONES.md)** - Operaciones diarias
-2. ✅ **[Análisis de Costos](04-COSTOS-INFRAESTRUCTURA.md)** - Monitoreo de gastos
-3. ✅ **[Guía de Screenshots](05-GUIA-SCREENSHOTS.md)** - Evidencias visuales
-4. ✅ **[Video Demo](06-VIDEO-DEMO.md)** - Grabación de demostración
 
 ---
 
