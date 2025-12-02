@@ -1,12 +1,11 @@
-# 🏗️ Arquitectura del Sistema E-Commerce Microservices
+#  Arquitectura del Sistema E-Commerce Microservices
 
-**Versión:** 1.0  
 **Fecha:** Diciembre 2025  
 **Autores:** David Santiago Malte, Santiago Ángel, Samuel Ibarra
 
 ---
 
-## 📋 Tabla de Contenidos
+##  Tabla de Contenidos
 
 1. [Introducción](#introducción)
 2. [Arquitectura de Alto Nivel](#arquitectura-de-alto-nivel)
@@ -19,108 +18,26 @@
 
 ---
 
-## 📖 Introducción
+##  Introducción
 
 Este documento describe la arquitectura completa del sistema de e-commerce basado en microservicios, desplegado en Google Cloud Platform utilizando Kubernetes (GKE) y siguiendo las mejores prácticas de diseño cloud-native.
 
 ### Objetivos de la Arquitectura
 
-- ✅ **Escalabilidad horizontal**: Cada microservicio puede escalar independientemente
-- ✅ **Alta disponibilidad**: Múltiples réplicas y health checks automatizados
-- ✅ **Resiliencia**: Circuit breakers y fallbacks para tolerancia a fallos
-- ✅ **Observabilidad**: Logs centralizados, métricas y distributed tracing
-- ✅ **Despliegue continuo**: CI/CD automatizado con Jenkins
-- ✅ **Seguridad**: Network policies, secrets management, RBAC
+-  **Escalabilidad horizontal**: Cada microservicio puede escalar independientemente
+-  **Resiliencia**: Circuit breakers y fallbacks para tolerancia a fallos
+-  **Observabilidad**: Logs centralizados, métricas y distributed tracing
+-  **Despliegue continuo**: CI/CD automatizado con Jenkins
+-  **Seguridad**: Network policies, secrets management, RBAC
 
 ---
 
-## 🎯 Arquitectura de Alto Nivel
+##  Arquitectura de Alto Nivel
 
 ### Vista General del Sistema
+![alt text](arquitectura.png)
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                USUARIOS                                  │
-│                         (Web / Mobile / API)                             │
-└────────────────────────────────┬────────────────────────────────────────┘
-                                 │ HTTPS
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          GOOGLE CLOUD PLATFORM                           │
-│                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                      Cloud Load Balancer                         │   │
-│  │                    (External IP: 35.x.x.x)                       │   │
-│  └────────────────────────────┬────────────────────────────────────┘   │
-│                                │                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                    GKE STANDARD CLUSTER                          │   │
-│  │                   (us-central1, Regional)                        │   │
-│  │                                                                   │   │
-│  │  ┌─────────────────────────────────────────────────────────┐   │   │
-│  │  │                  NAMESPACE: dev                          │   │   │
-│  │  │                                                           │   │   │
-│  │  │  ┌───────────────────────────────────────────────────┐  │   │   │
-│  │  │  │         INFRASTRUCTURE LAYER                      │  │   │   │
-│  │  │  │                                                     │  │   │   │
-│  │  │  │  ┌─────────────┐        ┌─────────────┐          │  │   │   │
-│  │  │  │  │  API        │        │  Service    │          │  │   │   │
-│  │  │  │  │  Gateway    │◄───────│  Discovery  │          │  │   │   │
-│  │  │  │  │  (Proxy)    │        │  (Eureka)   │          │  │   │   │
-│  │  │  │  │  Port: 8200 │        │  Port: 8761 │          │  │   │   │
-│  │  │  │  └──────┬──────┘        └─────────────┘          │  │   │   │
-│  │  │  │         │                                         │  │   │   │
-│  │  │  │  ┌──────┴───────┐        ┌─────────────┐        │  │   │   │
-│  │  │  │  │  Config      │        │   Zipkin    │        │  │   │   │
-│  │  │  │  │  Server      │        │  (Tracing)  │        │  │   │   │
-│  │  │  │  │  Port: 8888  │        │  Port: 9411 │        │  │   │   │
-│  │  │  │  └──────────────┘        └─────────────┘        │  │   │   │
-│  │  │  └─────────────────────────────────────────────────┘  │   │   │
-│  │  │                                                         │   │   │
-│  │  │  ┌───────────────────────────────────────────────────┐│   │   │
-│  │  │  │         BUSINESS SERVICES LAYER                   ││   │   │
-│  │  │  │                                                     ││   │   │
-│  │  │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐        ││   │   │
-│  │  │  │  │  User    │  │ Product  │  │  Order   │        ││   │   │
-│  │  │  │  │ Service  │  │ Service  │  │ Service  │        ││   │   │
-│  │  │  │  │Port: 8700│  │Port: 8500│  │Port: 8300│        ││   │   │
-│  │  │  │  └──────────┘  └──────────┘  └──────────┘        ││   │   │
-│  │  │  │                                                     ││   │   │
-│  │  │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐        ││   │   │
-│  │  │  │  │ Payment  │  │ Shipping │  │ Favourite│        ││   │   │
-│  │  │  │  │ Service  │  │ Service  │  │ Service  │        ││   │   │
-│  │  │  │  │Port: 8400│  │Port: 8600│  │Port: 8800│        ││   │   │
-│  │  │  │  └──────────┘  └──────────┘  └──────────┘        ││   │   │
-│  │  │  └───────────────────────────────────────────────────┘│   │   │
-│  │  └─────────────────────────────────────────────────────────┘   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                     ARTIFACT REGISTRY                            │   │
-│  │           (Docker Images: us-central1-docker.pkg.dev)            │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                                                           │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │                     CLOUD STORAGE                                │   │
-│  │            (Terraform State Backend: gs://...)                   │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└───────────────────────────────────────────────────────────────────────────┘
 
-┌───────────────────────────────────────────────────────────────────────────┐
-│                            CI/CD PIPELINE                                  │
-│  ┌─────────────────────────────────────────────────────────────────┐     │
-│  │  Jenkins Server (Compute Engine VM: e2-standard-2)              │     │
-│  │  IP: 34.123.43.189:8080                                          │     │
-│  │  • GitHub Webhooks → Automated Builds                            │     │
-│  │  • Maven Build → JUnit Tests → Trivy Scan                        │     │
-│  │  • Docker Build → Push to Artifact Registry                      │     │
-│  │  • kubectl apply → Deploy to GKE                                 │     │
-│  └─────────────────────────────────────────────────────────────────┘     │
-└───────────────────────────────────────────────────────────────────────────┘
-```
-
-![alt text](image.png)
-![alt text](image-1.png)
 ```bash
 # Comando para capturar arquitectura general
 gcloud compute instances list
@@ -130,9 +47,12 @@ kubectl get all -n dev
 ``` 
 > **Descripción:** Vista de todos los recursos desplegados en GCP
 
+![alt text](image.png)
+![alt text](image-1.png)
+
 ---
 
-## 🔧 Arquitectura de Microservicios
+## Arquitectura de Microservicios
 
 ### Descripción de Microservicios
 
@@ -232,10 +152,6 @@ kubectl get svc -n dev zipkin
   - `POST /products` - Crear producto
   - `PUT /products/{id}/stock` - Actualizar inventario
 
-**Patrones implementados:**
-- ✅ **Circuit Breaker** (Resilience4j)
-- ✅ **Retry** con exponential backoff
-- ✅ **Bulkhead** para aislamiento de recursos
 
 ##### c) Order Service
 - **Puerto:** 8300
@@ -252,8 +168,6 @@ Order Service → Payment Service (procesar pago)
 Order Service → Shipping Service (crear envío)
 ```
 
-
-
 ##### d) Payment Service
 - **Puerto:** 8400
 - **Integración:** Stripe/PayPal (simulado)
@@ -262,20 +176,6 @@ Order Service → Shipping Service (crear envío)
   - `GET /payments/{id}` - Estado de pago
   - `POST /payments/{id}/refund` - Reembolso
 
-**Circuit Breaker configurado:**
-```java
-@CircuitBreaker(name = "payment-service", fallbackMethod = "paymentFallback")
-public PaymentResponse processPayment(PaymentRequest request) {
-    // Lógica de pago
-}
-
-public PaymentResponse paymentFallback(PaymentRequest request, Exception e) {
-    return PaymentResponse.builder()
-        .status("PENDING")
-        .message("Payment service temporarily unavailable")
-        .build();
-}
-```
 
 ##### e) Shipping Service
 - **Puerto:** 8600
@@ -293,9 +193,21 @@ public PaymentResponse paymentFallback(PaymentRequest request, Exception e) {
   - `POST /favourites` - Agregar favorito
   - `DELETE /favourites/{id}` - Eliminar favorito
 
+## Patrones de diseño
+
+**Circuit Breaker:**
+
+El patrón de diseño Circuit Breaker implementado en el proyecto actúa como un mecanismo de protección entre los microservicios, específicamente en la comunicación desde el api gateway hacia los servicios de productos, pagos y usuarios.
+
+Su implementación se realizó usando el filtro nativo de Resilience4j integrado con Spring Cloud Gateway, el cual envuelve las peticiones que coinciden con las rutas registradas en el descubrimiento de servicios mediante Eureka.
+
+
+Desde Grafana se puede evidenciar el estado de cada uno de los Cir
+
+
 ---
 
-## ☁️ Arquitectura de Infraestructura
+##  Arquitectura de Infraestructura
 
 ### Google Cloud Platform Resources
 
